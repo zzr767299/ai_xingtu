@@ -37,9 +37,11 @@ export function aiEndpoint(settings: AiSettings): string {
 
 export function isAiConfigured(settings: AiSettings): boolean {
   if (!settings.enabled) return false;
-  if (!settings.model.trim()) return false;
+  // 代理模式只依赖代理地址；Base URL / 模型 / Key 由代理服务端 .env 提供
   if (settings.useProxy) return Boolean(settings.proxyUrl.trim());
-  return Boolean(settings.baseUrl.trim() && settings.apiKey.trim());
+  return Boolean(
+    settings.baseUrl.trim() && settings.apiKey.trim() && settings.model.trim(),
+  );
 }
 
 export async function requestChat(
@@ -69,7 +71,8 @@ export async function requestChat(
 
     try {
       const body: Record<string, unknown> = {
-        model: settings.model,
+        // 代理模式下不发送 model，始终使用服务端 .env 的 AI_MODEL，避免前端残留值覆盖
+        ...(settings.useProxy ? {} : { model: settings.model }),
         messages,
         temperature: settings.temperature,
         max_tokens: settings.maxTokens,

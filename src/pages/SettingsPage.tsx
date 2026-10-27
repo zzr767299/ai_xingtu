@@ -30,6 +30,7 @@ export function SettingsPage() {
     hint?: string;
     action?: "disable-proxy" | "use-proxy";
   } | null>(null);
+  const [proxyHealth, setProxyHealth] = useState<{ ok: boolean; text: string } | null>(null);
   const [includeKey, setIncludeKey] = useState(false);
   const [importPreview, setImportPreview] = useState<{
     text: string;
@@ -112,8 +113,41 @@ export function SettingsPage() {
     await runTestWith(config, mode === "direct" ? "直连" : mode === "proxy" ? "代理" : "当前配置");
   };
 
+  const proxyEnvSnippet = [
+    draft.ai.baseUrl.trim() ? `AI_BASE_URL=${draft.ai.baseUrl.trim()}` : "",
+    draft.ai.model.trim() ? `AI_MODEL=${draft.ai.model.trim()}` : "",
+    "AI_API_KEY=在此填入服务端 Key",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const checkProxyHealth = async () => {
+    setProxyHealth(null);
+    try {
+      const base = new URL(draft.ai.proxyUrl);
+      const response = await fetch(`${base.origin}/health`, { headers: { Accept: "application/json" } });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = (await response.json()) as { baseUrl?: string; model?: string; hasKey?: boolean };
+      setProxyHealth({
+        ok: true,
+        text: `代理在线 · 模型 ${data.model || "未设置"} · ${data.hasKey ? "Key 已配置" : "Key 未配置"} · 上游 ${data.baseUrl || "未设置"}`,
+      });
+    } catch (caught) {
+      setProxyHealth({
+        ok: false,
+        text: `无法读取代理状态：${caught instanceof Error ? caught.message : String(caught)}。请确认 npm run proxy 正在运行。`,
+      });
+    }
+  };
+
   const copyProxyEnv = async () => {
-    const snippet = `AI_BASE_URL=${draft.ai.baseUrl}\nAI_MODEL=${draft.ai.model}\nAI_API_KEY=在此填入服务端 Key`;
+    // 只把填写的值写进片段；留空表示沿用 .env 中已有配置
+    const lines = [
+      draft.ai.baseUrl.trim() ? `AI_BASE_URL=${draft.ai.baseUrl.trim()}` : "",
+      draft.ai.model.trim() ? `AI_MODEL=${draft.ai.model.trim()}` : "",
+      "AI_API_KEY=在此填入服务端 Key",
+    ].filter(Boolean);
+    const snippet = lines.join("\n");
     try {
       await navigator.clipboard.writeText(snippet);
       notify("代理环境变量已复制，保存到 .env 后重启 npm run proxy", "success");
@@ -211,7 +245,10 @@ export function SettingsPage() {
                   ))}
                 </select>
               </Field>
-              <Field label="模型名称" hint="例如 deepseek-chat、qwen-plus">
+              <Field
+                label="模型名称"
+                hint={draft.ai.useProxy ? "代理模式不参与请求，使用 .env 的 AI_MODEL" : "例如 deepseek-chat、qwen-plus"}
+              >
                 <input
                   value={draft.ai.model}
                   onChange={(event) => setAi({ model: event.target.value })}
@@ -219,7 +256,10 @@ export function SettingsPage() {
                   placeholder="模型 ID"
                 />
               </Field>
-              <Field label="Base URL" hint="OpenAI 兼容接口根路径，通常以 /v1 结尾">
+              <Field
+                label="Base URL"
+                hint={draft.ai.useProxy ? "代理模式下可留空，使用 .env 的 AI_BASE_URL" : "OpenAI 兼容接口根路径，通常以 /v1 结尾"}
+              >
                 <input
                   value={draft.ai.baseUrl}
                   onChange={(event) => setAi({ baseUrl: event.target.value })}
@@ -227,7 +267,7 @@ export function SettingsPage() {
                   placeholder="https://api.example.com/v1"
                 />
               </Field>
-              <Field label="API Key" hint="仅保存在本地浏览器">
+              <Field label="API Key" hint={draft.ai.useProxy ? "代理模式不使用，可留空" : "仅保存在本地浏览器"}>
                 <div className="flex gap-1.5">
                   <input
                     type={showKey ? "text" : "password"}
@@ -246,7 +286,7 @@ export function SettingsPage() {
 
             {draft.ai.useProxy && (
               <p className="mt-2 rounded-lg border border-gold/30 bg-gold/[0.06] px-3 py-2 text-[11px] leading-relaxed text-gold">
-                当前启用代理：上方的 Base URL 与 API Key <span className="font-semibold">不会随请求发送</span>，请求由代理服务端注入 Key。若想验证直连配置，请用下方「测试直连」。
+                当前启用代理：上方三项均为<span className="font-semibold">可选</span>，仅用于生成 .env 参考，<span className="font-semibold">不参与请求</span>。真正的 Base URL / 模型 / Key 由代理服务端 .env 提供，留空即可。
               </p>
             )}
 
@@ -273,12 +313,15 @@ export function SettingsPage() {
                 </Field>
                 <div className="rounded-lg border border-line/70 bg-panel2/40 p-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-muted">代理服务端 .env（保存后重启 npm run proxy）</span>
+                    <span className="text-[11px] text-muted">代理 .env 参考片段（按当前表单生成，留空项不写入）</span>
                     <Button size="sm" variant="ghost" onClick={() => void copyProxyEnv()}>
                       复制
                     </Button>
                   </div>
-                  <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[10.5px] leading-relaxed text-muted">{`AI_BASE_URL=${draft.ai.baseUrl || "https://..."}\nAI_MODEL=${draft.ai.model || "..."}\nAI_API_KEY=在此填入服务端 Key`}</pre>
+                  <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[10.5px] leading-relaxed text-muted">{proxyEnvSnippet}</pre>
+                  <p className="mt-1 text-[10px] leading-relaxed text-dim">
+                    代理实际生效的配置以「检测代理」结果为准；修改 .env 后需要重启 npm run proxy。
+                  </p>
                 </div>
               </div>
             )}
@@ -336,7 +379,7 @@ export function SettingsPage() {
                 size="sm"
                 variant="ghost"
                 onClick={() => void runTest("direct")}
-                disabled={testing || !draft.ai.baseUrl || !draft.ai.apiKey}
+                disabled={testing || !draft.ai.baseUrl || !draft.ai.apiKey || !draft.ai.model}
               >
                 测试直连
               </Button>
@@ -347,6 +390,14 @@ export function SettingsPage() {
                 disabled={testing || !draft.ai.proxyUrl}
               >
                 测试代理
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void checkProxyHealth()}
+                disabled={!draft.ai.proxyUrl}
+              >
+                检测代理
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setDraft(settings)} disabled={!dirty}>
                 放弃修改
@@ -397,6 +448,19 @@ export function SettingsPage() {
                     改用代理测试
                   </Button>
                 )}
+              </div>
+            )}
+            {proxyHealth && (
+              <div
+                className={cn(
+                  "mt-2 rounded-lg border px-3 py-2 text-[11.5px] leading-relaxed",
+                  proxyHealth.ok
+                    ? "border-cyan/35 bg-cyan/[0.06] text-cyan"
+                    : "border-danger/40 bg-danger/10 text-danger",
+                )}
+              >
+                {proxyHealth.ok ? "● " : "✗ "}
+                {proxyHealth.text}
               </div>
             )}
             <p className="mt-2 text-[11px] leading-relaxed text-dim">

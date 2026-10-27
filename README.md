@@ -28,7 +28,7 @@ cd ai_xingtu
 npm install
 
 npm run dev        # 开发服务器，默认 http://localhost:5173
-npm test           # 53 项自动化测试
+npm test           # 59 项自动化测试
 npm run build      # 类型检查 + 生产构建（dist/）
 npm run preview    # 预览生产构建
 ```
@@ -132,7 +132,7 @@ ai-xingtu/
 │  ├─ state/AppContext.tsx    # 全局课程、进度、设置、AI 服务
 │  ├─ components/             # 布局、星图、Markdown、UI 基元
 │  └─ pages/                  # 控制台、星图、章节（导读/讲解/总结/考试）、错题本、术语库、设置
-├─ tests/                     # 53 项 Vitest 测试
+├─ tests/                     # 59 项 Vitest 测试
 └─ vite.config.ts             # 课程图片中间件、/api 代理
 ```
 
@@ -158,6 +158,8 @@ npm run proxy
 ```
 
 然后在设置中启用「通过本地 / 服务端代理调用」，代理地址填 `http://localhost:8787/api/ai/chat`（或生产环境地址）。前端不再持有 Key。
+
+代理模式只需代理地址：设置页的 Base URL、模型、API Key 都可以留空，它们仅用于生成 `.env` 参考片段，不参与请求；真正的配置来自服务端 `.env` 的 `AI_BASE_URL`、`AI_MODEL`、`AI_API_KEY`。点击「检测代理」会显示代理实际使用的模型、上游地址和 Key 是否就绪（不会显示 Key 内容）。
 
 Ollama 直连需要允许跨域：`OLLAMA_ORIGINS=* ollama serve`。
 
@@ -214,7 +216,7 @@ npm run course:assets  # 可选：复制图片
 
 ```
 Test Files  5 passed (5)
-     Tests  53 passed (53)
+     Tests  59 passed (59)
 ```
 
 覆盖：
@@ -229,7 +231,8 @@ Test Files  5 passed (5)
 - 刷新后从 IndexedDB 恢复位置与成绩；重复考试保留历史；
 - 导出 → 校验 → 导入；非法格式/版本被拒绝；导出默认不含 Key；
 - 课程同步按源路径/内容哈希迁移进度；标题改名或章节重排不丢进度；
-- 课程数据完整性：5 大关卡 / 78 章 / 稳定 ID / 无残留 `.md` 链接 / 图片路径正确。
+- 课程数据完整性：5 大关卡 / 78 章 / 稳定 ID / 无残留 `.md` 链接 / 图片路径正确；
+- 代理模式只要求代理地址，模型/Base URL/Key 留空也能连通；直连模式仍要求三项齐全；请求体在模型留空时不发送 model。
 
 运行：`npm test`。
 
