@@ -1,18 +1,32 @@
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../state/AppContext";
 import type { ChapterMeta, StarTier } from "../types";
 import { Badge, Button, Card, LinkButton, Modal, ProgressBar, cn } from "../components/ui";
-import { StarShape } from "../components/StarIcon";
 import { areaCompletion, starLabel } from "../lib/domain/rules";
 import { formatRelative, truncate } from "../lib/utils/format";
 
 type ViewMode = "map" | "list";
 type FilterMode = "all" | "unlocked" | "passed" | "review";
 
-const NODE_H = 104;
-const MAP_WIDTH = 1000;
-const MAX_COLS = 6;
+const COLUMNS = 4;
+const COL_X = [120, 360, 600, 840];
+const MAP_WIDTH = 960;
+const ROW_H = 138;
+const REGION_HEADER = 92;
+const REGION_GAP = 22;
+const NODE_R = 24;
+
+const AREA_ACCENTS = [
+  "var(--color-cyan)",
+  "var(--color-blue)",
+  "var(--color-gold)",
+  "var(--color-bronze)",
+  "var(--color-violet)",
+];
+
+const LOCK_PATH =
+  "M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm0 2a3 3 0 013 3v3H9V7a3 3 0 013-3z";
 
 interface Positioned {
   chapter: ChapterMeta;
@@ -21,14 +35,15 @@ interface Positioned {
   index: number;
 }
 
-interface Lane {
+interface Region {
   areaId: string;
   code: string;
   title: string;
   y: number;
   height: number;
-  nodes: Positioned[];
+  accent: string;
   chapterIds: string[];
+  nodes: Positioned[];
 }
 
 export function MapPage() {
@@ -40,49 +55,49 @@ export function MapPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterMode>("all");
   const [selected, setSelected] = useState<ChapterMeta | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const lanes = useMemo<Lane[]>(() => {
+  const regions = useMemo<Region[]>(() => {
     let y = 20;
-    return course.areas.map((area) => {
+    return course.areas.map((area, areaIndex) => {
       const list = area.chapterIds
         .map((id) => chapterById(id))
         .filter((chapter): chapter is ChapterMeta => Boolean(chapter))
         .sort((a, b) => a.order - b.order);
-      const cols = Math.max(1, Math.min(MAX_COLS, list.length));
-      const rows = Math.max(1, Math.ceil(list.length / cols));
-      const height = rows * NODE_H + 96;
-      const colGap = cols > 1 ? (MAP_WIDTH - 128) / (cols - 1) : 0;
+      const rows = Math.max(1, Math.ceil(list.length / COLUMNS));
+      const height = REGION_HEADER + rows * ROW_H;
       const nodes = list.map((chapter, index) => {
-        const row = Math.floor(index / cols);
-        const col = index % cols;
-        const effectiveCol = row % 2 === 0 ? col : cols - 1 - col;
+        const row = Math.floor(index / COLUMNS);
+        const col = index % COLUMNS;
+        const effective = row % 2 === 0 ? col : COLUMNS - 1 - col;
+        // 同排节点轻微上下错位，让路线呈现起伏，而不是一条直线
+        const wave = index % 2 === 0 ? -10 : 10;
         return {
           chapter,
           index,
-          x: 64 + effectiveCol * colGap,
-          y: y + 78 + row * NODE_H,
+          x: COL_X[effective],
+          y: y + REGION_HEADER + 42 + row * ROW_H + wave,
         };
       });
-      const lane: Lane = {
+      const region: Region = {
         areaId: area.id,
         code: area.code,
         title: area.title,
         y,
         height,
-        nodes,
+        accent: AREA_ACCENTS[areaIndex % AREA_ACCENTS.length],
         chapterIds: area.chapterIds,
+        nodes,
       };
-      y += height;
-      return lane;
+      y += height + REGION_GAP;
+      return region;
     });
   }, [course.areas, chapterById]);
 
-  const mapSize = useMemo(() => {
-    return { width: MAP_WIDTH, height: lanes.reduce((sum, lane) => sum + lane.height, 0) + 40 };
-  }, [lanes]);
+  const mapHeight = useMemo(
+    () => regions.reduce((sum, region) => sum + region.height + REGION_GAP, 20) + 30,
+    [regions],
+  );
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -98,46 +113,18 @@ export function MapPage() {
   }, [chapters, statuses, filter, query]);
 
   const currentChapterId = progress.lastLocation?.chapterId;
+  const currentNode = regions
+    .flatMap((region) => region.nodes)
+    .find((node) => node.chapter.id === currentChapterId);
 
-  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    dragRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: offset.x,
-      originY: offset.y,
-      moved: false,
-    };
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  const scrollToCurrent = () => {
+    const container = scrollRef.current;
+    if (!container) return;
+    container.scrollTo({ top: currentNode ? Math.max(0, currentNode.y - 160) : 0, behavior: "smooth" });
   };
 
-  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    if (Math.abs(dx) + Math.abs(dy) > 5) drag.moved = true;
-    setOffset({ x: drag.originX + dx, y: drag.originY + dy });
-  };
-
-  const onPointerUp = () => {
-    setTimeout(() => {
-      dragRef.current = null;
-    }, 0);
-  };
-
-  const zoomBy = (delta: number) => setZoom((value) => Math.min(1.8, Math.max(0.55, Number((value + delta).toFixed(2)))));
-
-  const focusCurrent = () => {
-    const lane = lanes.find((item) => item.chapterIds.includes(currentChapterId ?? ""));
-    const node = lane?.nodes.find((item) => item.chapter.id === currentChapterId);
-    if (!lane || !node) {
-      setZoom(1);
-      setOffset({ x: 0, y: 0 });
-      return;
-    }
-    setZoom(1);
-    setOffset({ x: 0, y: -node.y + 140 });
+  const scrollToRegion = (region: Region) => {
+    scrollRef.current?.scrollTo({ top: Math.max(0, region.y - 12), behavior: "smooth" });
   };
 
   return (
@@ -147,7 +134,7 @@ export function MapPage() {
           <p className="text-[11px] uppercase tracking-[0.28em] text-dim">Campaign Map</p>
           <h1 className="mt-1 text-2xl font-semibold text-ink">关卡星图</h1>
           <p className="mt-1 text-sm text-muted">
-            5 个大关卡 · {course.stats.chapters} 颗星星。每个大关卡的首章默认开放，可自由选择领域；同一领域内通关一颗星才能点亮下一颗。
+            5 个知识地区 · 78 个关卡。每个地区首关默认开放，可自由选择领域；同一地区内按路线依次闯关。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -162,7 +149,7 @@ export function MapPage() {
                   view === mode ? "bg-cyan/15 text-cyan" : "text-muted hover:text-ink",
                 )}
               >
-                {mode === "map" ? "星图" : "目录"}
+                {mode === "map" ? "路线图" : "目录"}
               </button>
             ))}
           </div>
@@ -177,185 +164,183 @@ export function MapPage() {
 
       {view === "map" ? (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <Card className="relative overflow-hidden">
+          <Card className="overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/60 px-4 py-2.5">
               <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
-                <LegendItem icon="🔒" label="未解锁" />
-                <LegendItem icon="◇" label="可开始" />
-                <LegendItem icon="◈" label="学习中" />
-                <LegendItem icon="⚑" label="待考试" />
-                <LegendItem icon="★" label="已通关" />
+                <LegendItem kind="locked" label="未解锁" />
+                <LegendItem kind="available" label="可开始" />
+                <LegendItem kind="current" label="学习中" />
+                <LegendItem kind="exam" label="待考试" />
+                <LegendItem kind="passed" label="已通关" />
               </div>
-              <div className="flex items-center gap-1.5">
-                <Button size="sm" variant="secondary" onClick={() => zoomBy(-0.15)} aria-label="缩小">
-                  −
-                </Button>
-                <span className="w-10 text-center text-[11px] tabular-nums text-muted">{Math.round(zoom * 100)}%</span>
-                <Button size="sm" variant="secondary" onClick={() => zoomBy(0.15)} aria-label="放大">
-                  +
-                </Button>
-                <Button size="sm" variant="ghost" onClick={focusCurrent}>
+              <div className="flex items-center gap-2">
+                <span className="hidden text-[10.5px] text-dim sm:inline">滚轮 / 拖动右侧滚动条浏览</span>
+                <Button size="sm" variant="secondary" onClick={scrollToCurrent}>
                   定位当前
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setZoom(1);
-                    setOffset({ x: 0, y: 0 });
-                  }}
-                >
-                  重置
                 </Button>
               </div>
             </div>
 
             <div
-              className="relative h-[calc(100vh-260px)] min-h-[460px] cursor-grab overflow-hidden active:cursor-grabbing"
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-              style={{ touchAction: "none" }}
-              onWheel={(event) => {
-                if (event.ctrlKey || event.metaKey) {
-                  event.preventDefault();
-                  zoomBy(event.deltaY > 0 ? -0.1 : 0.1);
-                }
-              }}
+              ref={scrollRef}
+              className="map-scroll h-[calc(100vh-292px)] min-h-[440px] overflow-y-auto overflow-x-hidden"
             >
-              <div
-                style={{
-                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
-                  transformOrigin: "top left",
-                  transition: dragRef.current ? "none" : "transform 180ms ease-out",
-                }}
+              <svg
+                viewBox={`0 0 ${MAP_WIDTH} ${mapHeight}`}
+                style={{ width: "100%", height: "auto", display: "block" }}
+                role="group"
+                aria-label="课程关卡路线图"
+                className="select-none"
               >
-                <svg
-                  viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
-                  style={{ width: "100%", height: "auto", display: "block" }}
-                  role="group"
-                  aria-label="课程关卡星图"
-                  className="map-grid select-none"
-                >
-                  <defs>
-                    <linearGradient id="lane-band" x1="0" x2="1">
-                      <stop offset="0%" stopColor="var(--map-band-1)" />
-                      <stop offset="100%" stopColor="var(--map-band-2)" />
-                    </linearGradient>
-                    <linearGradient id="path-line" x1="0" x2="1">
-                      <stop offset="0%" stopColor="var(--color-cyan)" stopOpacity="0.6" />
-                      <stop offset="100%" stopColor="var(--color-blue)" stopOpacity="0.45" />
-                    </linearGradient>
-                  </defs>
+                <defs>
+                  <radialGradient id="map-glow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="var(--color-cyan)" stopOpacity="0.18" />
+                    <stop offset="100%" stopColor="var(--color-cyan)" stopOpacity="0" />
+                  </radialGradient>
+                </defs>
 
-                  {lanes.map((lane, laneIndex) => {
-                    const completion = areaCompletion(lane.chapterIds, statuses);
-                    return (
-                      <g key={lane.areaId}>
+                {regions.map((region, regionIndex) => {
+                  const completion = areaCompletion(region.chapterIds, statuses);
+                  return (
+                    <g key={region.areaId}>
+                      <rect
+                        x={20}
+                        y={region.y}
+                        width={MAP_WIDTH - 40}
+                        height={region.height - 10}
+                        rx={26}
+                        fill="var(--map-region-bg)"
+                        stroke="var(--map-region-border)"
+                      />
+
+                      <circle
+                        cx={regionIndex % 2 === 0 ? 190 : 780}
+                        cy={region.y + region.height * 0.58}
+                        r={Math.min(150, region.height * 0.3)}
+                        fill={region.accent}
+                        opacity={0.045}
+                      />
+                      <circle
+                        cx={regionIndex % 2 === 0 ? 790 : 170}
+                        cy={region.y + REGION_HEADER + 70}
+                        r={64}
+                        fill={region.accent}
+                        opacity={0.06}
+                      />
+
+                      <g>
                         <rect
-                          x={16}
-                          y={lane.y}
-                          width={mapSize.width - 32}
-                          height={lane.height - 12}
-                          rx={18}
-                          fill="url(#lane-band)"
-                          stroke="var(--color-line)" strokeOpacity={0.75}
+                          x={42}
+                          y={region.y + 26}
+                          width={58}
+                          height={22}
+                          rx={11}
+                          fill={region.accent}
+                          opacity={0.14}
                         />
-                        <text x={32} y={lane.y + 26} fill="var(--color-cyan)" fontSize={11} fontFamily="monospace" letterSpacing="2">
-                          AREA {lane.code}
+                        <text
+                          x={71}
+                          y={region.y + 41}
+                          textAnchor="middle"
+                          fontSize={10}
+                          fontFamily="monospace"
+                          letterSpacing="1.5"
+                          fill={region.accent}
+                        >
+                          {region.code}
                         </text>
-                        <text x={104} y={lane.y + 26} fill="var(--color-prose-strong)" fontSize={13} fontWeight={600}>
-                          {lane.title}
+                        <text
+                          x={113}
+                          y={region.y + 43}
+                          fontSize={15}
+                          fontWeight={650}
+                          fill="var(--color-prose-strong)"
+                        >
+                          {region.title}
                         </text>
-                        <text x={mapSize.width - 36} y={lane.y + 26} textAnchor="end" fill="var(--color-muted)" fontSize={11}>
-                          {completion.passed}/{lane.chapterIds.length} 章 · 平均 {completion.average || "—"} 分
+                        <text
+                          x={MAP_WIDTH - 44}
+                          y={region.y + 42}
+                          textAnchor="end"
+                          fontSize={11}
+                          fill="var(--color-muted)"
+                        >
+                          {completion.passed}/{region.chapterIds.length} 关 · 平均 {completion.average || "—"} 分
                         </text>
-
-                        {lane.nodes.map((node, index) => {
-                          if (index === 0) return null;
-                          const previous = lane.nodes[index - 1];
-                          return (
-                            <path
-                              key={`path-${node.chapter.id}`}
-                              d={`M ${previous.x} ${previous.y} C ${previous.x + (node.x - previous.x) * 0.45} ${previous.y + 34}, ${node.x - (node.x - previous.x) * 0.45} ${node.y - 34}, ${node.x} ${node.y}`}
-                              fill="none"
-                              stroke="url(#path-line)"
-                              strokeWidth={2}
-                              strokeDasharray={statuses[node.chapter.id]?.unlocked ? undefined : "4 6"}
-                              opacity={0.85}
-                            />
-                          );
-                        })}
-
-                        {laneIndex > 0 && lane.nodes[0] && (
-                          <path
-                            d={`M ${lanes[laneIndex - 1].nodes.at(-1)!.x} ${lanes[laneIndex - 1].nodes.at(-1)!.y} C ${mapSize.width - 100} ${lanes[laneIndex - 1].nodes.at(-1)!.y + 30}, 90 ${lane.nodes[0].y - 30}, ${lane.nodes[0].x} ${lane.nodes[0].y}`}
-                            fill="none"
-                            stroke="var(--color-cyan)" strokeOpacity={0.28}
-                            strokeWidth={1.5}
-                            strokeDasharray="3 7"
-                          />
-                        )}
-
-                        {lane.nodes.map((node) => (
-                          <MapNode
-                            key={node.chapter.id}
-                            node={node}
-                            star={statuses[node.chapter.id]?.star ?? "failed"}
-                            locked={!statuses[node.chapter.id]?.unlocked}
-                            passed={Boolean(statuses[node.chapter.id]?.passed)}
-                            started={Boolean(statuses[node.chapter.id]?.started)}
-                            studyDone={statuses[node.chapter.id]?.studyPoints === 20}
-                            score={statuses[node.chapter.id]?.bestTotal ?? 0}
-                            current={node.chapter.id === currentChapterId}
-                            onSelect={() => {
-                              if (dragRef.current?.moved) return;
-                              setSelected(node.chapter);
-                            }}
-                          />
-                        ))}
+                        <rect
+                          x={42}
+                          y={region.y + 62}
+                          width={MAP_WIDTH - 84}
+                          height={5}
+                          rx={2.5}
+                          fill="var(--color-line-soft)"
+                        />
+                        <rect
+                          x={42}
+                          y={region.y + 62}
+                          width={(MAP_WIDTH - 84) * (completion.percent / 100)}
+                          height={5}
+                          rx={2.5}
+                          fill={region.accent}
+                          opacity={0.8}
+                        />
                       </g>
-                    );
-                  })}
-                </svg>
-              </div>
 
-              <div className="pointer-events-none absolute bottom-3 left-4 text-[11px] text-dim">
-                拖动平移 · Ctrl/⌘ + 滚轮缩放 · 点击星星查看详情
-              </div>
+                      {region.nodes.map((node, index) => {
+                        if (index === 0) return null;
+                        const previous = region.nodes[index - 1];
+                        return <Road key={`road-${node.chapter.id}`} from={previous} to={node} />;
+                      })}
+
+                      {region.nodes.map((node) => (
+                        <LevelNode
+                          key={node.chapter.id}
+                          node={node}
+                          accent={region.accent}
+                          status={statuses[node.chapter.id]}
+                          current={node.chapter.id === currentChapterId}
+                          passed={Boolean(statuses[node.chapter.id]?.passed)}
+                          onSelect={() => setSelected(node.chapter)}
+                        />
+                      ))}
+                    </g>
+                  );
+                })}
+              </svg>
             </div>
           </Card>
 
           <Card className="h-fit p-4">
-            <h2 className="text-sm font-semibold text-ink">大关卡总览</h2>
+            <h2 className="text-sm font-semibold text-ink">地区总览</h2>
+            <p className="mt-0.5 text-[11px] text-muted">点击地区可跳到对应路线。</p>
             <div className="mt-3 space-y-3">
-              {lanes.map((lane) => {
-                const completion = areaCompletion(lane.chapterIds, statuses);
+              {regions.map((region) => {
+                const completion = areaCompletion(region.chapterIds, statuses);
+                const started = region.chapterIds.some((id) => statuses[id]?.started);
                 return (
                   <button
-                    key={lane.areaId}
+                    key={region.areaId}
                     type="button"
-                    onClick={() => {
-                      setZoom(1);
-                      setOffset({ x: 0, y: -lane.y + 60 });
-                    }}
+                    onClick={() => scrollToRegion(region)}
                     className="w-full rounded-xl border border-line/60 bg-panel2/40 p-3 text-left transition-colors hover:border-cyan/40"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[10px] text-dim">{lane.code}</span>
-                      <Badge tone={completion.complete ? "ok" : completion.passed || lane.chapterIds.some((id) => statuses[id]?.started) ? "cyan" : "neutral"}>
-                        {completion.complete ? "已通关" : `${completion.passed}/${lane.chapterIds.length}`}
+                      <span className="flex items-center gap-1.5 font-mono text-[10px] text-dim">
+                        <span className="h-2 w-2 rounded-full" style={{ background: region.accent }} />
+                        {region.code}
+                      </span>
+                      <Badge tone={completion.complete ? "ok" : completion.passed || started ? "cyan" : "neutral"}>
+                        {completion.complete ? "已通关" : `${completion.passed}/${region.chapterIds.length}`}
                       </Badge>
                     </div>
-                    <div className="mt-1 text-[13px] text-ink">{lane.title}</div>
-                    <ProgressBar value={completion.passed} max={lane.chapterIds.length} className="mt-2" />
+                    <div className="mt-1 text-[13px] text-ink">{region.title}</div>
+                    <ProgressBar value={completion.passed} max={region.chapterIds.length} className="mt-2" />
                   </button>
                 );
               })}
             </div>
             <p className="mt-3 text-[11px] leading-relaxed text-dim">
-              大关卡完成 = 该领域所有必修章节都已通关；单章高分不会提前点亮整个大关卡。
+              地区完成 = 该领域全部必修关卡通关；单个关卡高分不会提前点亮整个地区。
             </p>
           </Card>
         </div>
@@ -392,17 +377,19 @@ export function MapPage() {
           <ul className="divide-y divide-line/50">
             {filtered.map((chapter) => {
               const status = statuses[chapter.id];
+              const areaIndex = course.areas.findIndex((area) => area.id === chapter.areaId);
+              const accent = AREA_ACCENTS[Math.max(0, areaIndex) % AREA_ACCENTS.length];
               return (
                 <li
                   key={chapter.id}
                   className="flex flex-wrap items-center gap-3 px-4 py-3 transition-colors hover:bg-white/[0.02]"
                 >
-                  <span className="w-8 text-center font-mono text-[11px] text-dim">{chapter.order}</span>
-                  <StarShape
-                    tier={status?.star ?? "failed"}
+                  <LevelDot
+                    order={chapter.order}
+                    accent={accent}
                     locked={!status?.unlocked}
-                    size={26}
-                    glow={status?.star === "gold"}
+                    passed={Boolean(status?.passed)}
+                    current={chapter.id === currentChapterId}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -467,55 +454,67 @@ export function MapPage() {
   );
 }
 
-function LegendItem({ icon, label }: { icon: string; label: string }) {
+function Road({ from, to }: { from: Positioned; to: Positioned }) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const path =
+    Math.abs(dx) < 1
+      ? `M ${from.x} ${from.y} C ${from.x + 70} ${from.y + 44}, ${to.x + 70} ${to.y - 44}, ${to.x} ${to.y}`
+      : `M ${from.x} ${from.y} C ${from.x + dx * 0.42} ${from.y + dy * 0.18}, ${to.x - dx * 0.42} ${to.y - dy * 0.18}, ${to.x} ${to.y}`;
+
   return (
-    <span className="inline-flex items-center gap-1">
-      <span aria-hidden="true">{icon}</span>
-      {label}
-    </span>
+    <g fill="none" strokeLinecap="round">
+      <path d={path} stroke="var(--map-road-edge)" strokeWidth={18} />
+      <path d={path} stroke="var(--map-road)" strokeWidth={13} />
+      <path d={path} stroke="var(--map-road-dash)" strokeWidth={2.6} strokeDasharray="1 11" opacity={0.9} />
+    </g>
   );
 }
 
-function MapNode({
+function starCountFor(star: StarTier, passed: boolean): number {
+  if (!passed) return 0;
+  if (star === "gold") return 3;
+  if (star === "silver") return 2;
+  return 1;
+}
+
+function nodeStatusText(status: ReturnType<typeof useApp>["statuses"][string] | undefined): string {
+  if (!status?.unlocked) return "未解锁";
+  if (status.passed) return `${status.bestTotal} 分`;
+  if (status.lastAttempt) return "需复习";
+  if (status.studyPoints === 20) return "待考试";
+  if (status.started) return "学习中";
+  return "可开始";
+}
+
+function LevelNode({
   node,
-  star,
-  locked,
-  passed,
-  started,
-  studyDone,
-  score,
+  accent,
+  status,
   current,
+  passed,
   onSelect,
 }: {
   node: Positioned;
-  star: StarTier;
-  locked: boolean;
-  passed: boolean;
-  started: boolean;
-  studyDone: boolean;
-  score: number;
+  accent: string;
+  status: ReturnType<typeof useApp>["statuses"][string] | undefined;
   current: boolean;
+  passed: boolean;
   onSelect: () => void;
 }) {
-  const statusText = locked
-    ? "未解锁"
-    : passed
-      ? `${score} 分`
-      : studyDone
-        ? "待考试"
-        : started
-          ? "学习中"
-          : "可开始";
-
-  const shortTitle = node.chapter.title.replace(/^第\s*[\d-]+\s*章\s*/, "").replace(/^前言/, "前言");
+  const locked = !status?.unlocked;
+  const started = Boolean(status?.started);
+  const statusText = nodeStatusText(status);
+  const shortTitle = node.chapter.title.replace(/^第\s*[\d-]+\s*章\s*/, "");
+  const stars = starCountFor(status?.star ?? "failed", passed);
 
   return (
     <g
       transform={`translate(${node.x}, ${node.y})`}
-      className="star-node"
+      className="map-level"
       role="button"
       tabIndex={0}
-      aria-label={`${node.chapter.title}，${statusText}${passed ? `，${starLabel(star)}` : ""}`}
+      aria-label={`第 ${node.chapter.order} 关 ${node.chapter.title}，${statusText}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -524,25 +523,187 @@ function MapNode({
         }
       }}
     >
-      <title>{`${node.chapter.title} · ${statusText}`}</title>
+      <title>{`第 ${node.chapter.order} 关 · ${node.chapter.title} · ${statusText}`}</title>
+
       {current && (
         <>
-          <circle r={24} cy={-4} fill="none" stroke="var(--color-cyan)" strokeWidth={1.5} className="pulse-dot" opacity={0.6} />
-          <text y={-30} textAnchor="middle" fontSize={8.5} fill="var(--color-cyan)" letterSpacing="1">
+          <circle r={NODE_R + 12} fill="url(#map-glow)" />
+          <circle
+            r={NODE_R + 10}
+            fill="none"
+            stroke={accent}
+            strokeWidth={1.6}
+            className="pulse-dot"
+            opacity={0.7}
+          />
+          <text y={-NODE_R - 20} textAnchor="middle" fontSize={8.5} fill={accent} letterSpacing={1}>
             当前
           </text>
         </>
       )}
-      <g transform="translate(-16, -20)">
-        <StarShape tier={star} locked={locked} size={32} glow={star === "gold" || (passed && !locked)} />
-      </g>
-      <text y={24} textAnchor="middle" fontSize={9.5} fill={locked ? "var(--color-dim)" : "var(--color-muted)"} className="star-label">
-        {truncate(shortTitle, 8)}
+
+      <circle r={NODE_R + 3} cy={3} fill="var(--map-node-shadow)" opacity={0.5} />
+      <circle
+        r={NODE_R}
+        fill={locked ? "var(--map-node-locked)" : "var(--map-node-bg)"}
+        stroke={locked ? "var(--color-line)" : accent}
+        strokeWidth={passed || current ? 2.4 : 1.6}
+        opacity={locked ? 0.85 : 1}
+      />
+      {!locked && (
+        <circle r={NODE_R - 2.5} fill={accent} opacity={passed ? 0.22 : started ? 0.16 : 0.1} />
+      )}
+      <circle
+        r={NODE_R - 8}
+        fill="none"
+        stroke={locked ? "var(--color-line)" : accent}
+        strokeWidth={0.8}
+        opacity={0.35}
+      />
+      {!locked && <ellipse cx={-7} cy={-9} rx={9} ry={5} fill="#ffffff" opacity={0.22} />}
+
+      <text
+        y={5}
+        textAnchor="middle"
+        fontSize={13.5}
+        fontWeight={700}
+        fontFamily="monospace"
+        fill={locked ? "var(--color-dim)" : accent}
+      >
+        {String(node.chapter.order).padStart(2, "0")}
       </text>
-      <text y={38} textAnchor="middle" fontSize={9} fill={locked ? "var(--color-dim)" : passed ? "var(--color-cyan)" : "var(--color-muted)"}>
+
+      {locked && (
+        <g transform="translate(14,-17) scale(0.42)" fill="var(--color-dim)">
+          <path d={LOCK_PATH} />
+        </g>
+      )}
+
+      {passed && (
+        <g transform="translate(0, 38)">
+          {[0, 1, 2].map((index) => (
+            <text
+              key={index}
+              x={(index - 1) * 11}
+              y={0}
+              textAnchor="middle"
+              fontSize={8.5}
+              fill={index < stars ? "var(--color-gold)" : "var(--color-line)"}
+            >
+              ★
+            </text>
+          ))}
+        </g>
+      )}
+
+      <text
+        y={passed ? 59 : 43}
+        textAnchor="middle"
+        fontSize={9.5}
+        fill={locked ? "var(--color-dim)" : "var(--color-prose-strong)"}
+      >
+        {truncate(shortTitle, 9)}
+      </text>
+      <text
+        y={passed ? 73 : 57}
+        textAnchor="middle"
+        fontSize={9}
+        fill={locked ? "var(--color-dim)" : passed ? accent : "var(--color-muted)"}
+      >
         {statusText}
       </text>
     </g>
+  );
+}
+
+function LevelDot({
+  order,
+  accent,
+  locked,
+  passed,
+  current,
+}: {
+  order: number;
+  accent: string;
+  locked: boolean;
+  passed: boolean;
+  current: boolean;
+}) {
+  return (
+    <svg width={28} height={28} viewBox="0 0 28 28" aria-hidden="true" className="shrink-0">
+      {current && (
+        <circle cx={14} cy={14} r={13} fill="none" stroke={accent} strokeWidth={1} className="pulse-dot" />
+      )}
+      <circle
+        cx={14}
+        cy={14}
+        r={12}
+        fill={locked ? "var(--map-node-locked)" : "var(--map-node-bg)"}
+        stroke={locked ? "var(--color-line)" : accent}
+        strokeWidth={1.4}
+      />
+      {!locked && <circle cx={14} cy={14} r={10} fill={accent} opacity={passed ? 0.22 : 0.12} />}
+      <text
+        x={14}
+        y={18}
+        textAnchor="middle"
+        fontSize={9.5}
+        fontWeight={700}
+        fontFamily="monospace"
+        fill={locked ? "var(--color-dim)" : accent}
+      >
+        {String(order).padStart(2, "0")}
+      </text>
+      {locked && (
+        <g transform="translate(17.5,4.5) scale(0.36)" fill="var(--color-dim)">
+          <path d={LOCK_PATH} />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function LegendItem({
+  kind,
+  label,
+}: {
+  kind: "locked" | "available" | "current" | "exam" | "passed";
+  label: string;
+}) {
+  const accent =
+    kind === "passed" ? "var(--color-gold)" : kind === "locked" ? "var(--color-line)" : "var(--color-cyan)";
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <svg width={16} height={16} viewBox="0 0 16 16" aria-hidden="true">
+        <circle
+          cx={8}
+          cy={8}
+          r={6.5}
+          fill={kind === "locked" ? "var(--map-node-locked)" : "var(--map-node-bg)"}
+          stroke={accent}
+          strokeWidth={1.2}
+        />
+        {kind === "locked" ? (
+          <g transform="translate(5.1,3.4) scale(0.25)" fill="var(--color-dim)">
+            <path d={LOCK_PATH} />
+          </g>
+        ) : kind === "passed" ? (
+          <text x={8} y={10.5} textAnchor="middle" fontSize={7} fill="var(--color-gold)">
+            ★
+          </text>
+        ) : kind === "exam" ? (
+          <text x={8} y={10.8} textAnchor="middle" fontSize={7.5} fill={accent}>
+            考
+          </text>
+        ) : (
+          <text x={8} y={10.6} textAnchor="middle" fontSize={7.5} fontFamily="monospace" fill={accent}>
+            1
+          </text>
+        )}
+      </svg>
+      {label}
+    </span>
   );
 }
 
@@ -570,11 +731,15 @@ function ChapterDetailModal({
   return (
     <Modal open onClose={onClose} title={chapter.title} width="max-w-xl">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="neutral">AREA {area?.code}</Badge>
+        <Badge tone="neutral">地区 {area?.code}</Badge>
         <Badge tone="neutral">{area?.title}</Badge>
         {chapter.groupTitle && <Badge tone="neutral">{chapter.groupTitle}</Badge>}
         <Badge tone={status?.passed ? "ok" : "cyan"}>
-          {status?.passed ? `已通关 · ${status.bestTotal} 分 · ${starLabel(status.star)}` : status?.unlocked ? "已解锁" : "未解锁"}
+          {status?.passed
+            ? `已通关 · ${status.bestTotal} 分 · ${starLabel(status.star)}`
+            : status?.unlocked
+              ? "已解锁"
+              : "未解锁"}
         </Badge>
       </div>
 
@@ -608,7 +773,10 @@ function ChapterDetailModal({
         <div className="text-xs font-medium text-ink">知识点目录</div>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {chapter.sections.map((section) => (
-            <span key={section.id} className="rounded-md border border-line/70 bg-white/[0.03] px-2 py-0.5 text-[11px] text-muted">
+            <span
+              key={section.id}
+              className="rounded-md border border-line/70 bg-white/[0.03] px-2 py-0.5 text-[11px] text-muted"
+            >
               {section.title}
             </span>
           ))}
@@ -622,7 +790,7 @@ function ChapterDetailModal({
         ) : previous ? (
           <p className="mt-1 text-muted">
             {status?.unlocked
-              ? `已满足：前置章节「${previous.title}」已通关。`
+              ? `已满足：前置关卡「${previous.title}」已通关。`
               : `需要先通关「${chapterById(previous.id)?.title ?? previous.title}」。`}
           </p>
         ) : (
@@ -638,7 +806,7 @@ function ChapterDetailModal({
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
         {!status?.unlocked && previous && (
           <LinkButton to={`/learn/${previous.id}`} variant="secondary" size="sm">
-            先去前置章节
+            先去前置关卡
           </LinkButton>
         )}
         {status?.passed && (

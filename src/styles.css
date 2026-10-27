@@ -14,6 +14,7 @@
   --color-gold: #f6c453;
   --color-silver: #c7d0dc;
   --color-bronze: #c98b5a;
+  --color-violet: #b58cff;
   --color-danger: #f87171;
   --color-ok: #4ade80;
   --color-prose: #d7e1ef;
@@ -41,6 +42,14 @@
   --map-band-1: rgba(55, 214, 230, 0.07);
   --map-band-2: rgba(91, 140, 255, 0.03);
   --scroll-thumb: #2a3a55;
+  --map-road-edge: #22314a;
+  --map-road: #3a4d6b;
+  --map-road-dash: #93a9c7;
+  --map-region-bg: rgba(15, 23, 37, 0.55);
+  --map-region-border: #223049;
+  --map-node-bg: #0f1a2b;
+  --map-node-locked: #151f31;
+  --map-node-shadow: rgba(0, 0, 0, 0.35);
 }
 
 html,
@@ -232,22 +241,6 @@ html[data-reduce-motion="true"] *::after {
   color: var(--color-cyan);
 }
 
-/* 星图 */
-.star-node {
-  cursor: pointer;
-  outline: none;
-}
-.star-node:focus-visible .star-shape {
-  stroke: var(--color-cyan);
-  stroke-width: 2;
-}
-.star-node:hover .star-label {
-  fill: var(--color-prose-strong);
-}
-
-.map-grid line {
-  stroke: rgba(55, 214, 230, 0.05);
-}
 
 @keyframes pulse-glow {
   0%,
@@ -346,6 +339,15 @@ html[data-theme="paper"] {
   --map-band-1: rgba(27, 106, 114, 0.09);
   --map-band-2: rgba(60, 95, 149, 0.05);
   --scroll-thumb: #c6b592;
+  --color-violet: #74509f;
+  --map-road-edge: #dcc9a2;
+  --map-road: #f7ead0;
+  --map-road-dash: #c2a97a;
+  --map-region-bg: rgba(255, 250, 240, 0.65);
+  --map-region-border: #dccdb2;
+  --map-node-bg: #fffaf0;
+  --map-node-locked: #efe4cf;
+  --map-node-shadow: rgba(120, 95, 60, 0.2);
 }
 
 html[data-theme="paper"] body {
@@ -388,4 +390,49 @@ html[data-theme="paper"] .card-glow {
 }
 html[data-theme="paper"] ::selection {
   background: rgba(27, 106, 114, 0.18);
+}
+
+/* ---------------- 关卡路线图 ---------------- */
+.map-level {
+  cursor: pointer;
+  outline: none;
+}
+.map-level:focus-visible circle:nth-of-type(2) {
+  stroke: var(--color-cyan);
+  stroke-width: 3;
+}
+.map-level:hover text {
+  filter: brightness(1.15);
+}
+
+.map-scroll {
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-cyan) 55%, transparent) transparent;
+}
+.map-scroll::-webkit-scrollbar {
+  width: 14px;
+}
+.map-scroll::-webkit-scrollbar-track {
+  background: color-mix(in oklab, var(--color-line) 35%, transparent);
+  border-radius: 999px;
+}
+.map-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-cyan) 55%, transparent);
+  border: 4px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+.map-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-cyan) 78%, transparent);
+  background-clip: content-box;
+}
+
+@media (max-width: 900px) {
+  .map-scroll {
+    overflow-x: auto;
+  }
+  .map-scroll > svg {
+    min-width: 760px;
+  }
 }
