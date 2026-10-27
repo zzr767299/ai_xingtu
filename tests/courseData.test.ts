@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeChapterId } from "../scripts/course-lib.mjs";
+import { upstreamImageUrl } from "../src/lib/course/assets";
 import { loadChapterContent, loadCourse, loadGlossary } from "./helpers";
 
 const publicRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public", "course");
@@ -70,6 +71,15 @@ describe("课程数据完整性", () => {
     expect(glossary.terms.length).toBeGreaterThan(150);
     expect(glossary.contrasts.length).toBeGreaterThan(15);
     expect(glossary.terms.find((term) => term.term === "Checkpoint")).toBeTruthy();
+  });
+
+  it("本地缺失的课程图片能映射到上游 raw 地址", () => {
+    expect(upstreamImageUrl("/course-assets/images/1-1/a.jpg")).toBe(
+      "https://raw.githubusercontent.com/didilili/ai-agents-from-zero/main/images/1-1/a.jpg",
+    );
+    expect(upstreamImageUrl("https://example.com/a.jpg")).toBeNull();
+    expect(upstreamImageUrl("images/a.jpg")).toBeNull();
+    expect(upstreamImageUrl(undefined)).toBeNull();
   });
 
   it("课程来源与许可是 MIT", () => {
