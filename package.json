@@ -1,0 +1,38 @@
+{
+  "name": "ai-xingtu",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI 星途：游戏化智能学习系统",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "course:build": "node scripts/build-course.mjs",
+    "course:assets": "node scripts/copy-assets.mjs",
+    "proxy": "node server/ai-proxy.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.7",
+    "idb": "^8.0.3",
+    "marked": "^16.4.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.4",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "tailwindcss": "^4.1.14",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  },
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,391 @@
+@import "tailwindcss";
+
+@theme {
+  --color-void: #060911;
+  --color-panel: #0d1421;
+  --color-panel2: #121b2b;
+  --color-line: #223049;
+  --color-line-soft: #1a2537;
+  --color-ink: #e9eff9;
+  --color-muted: #8fa1b9;
+  --color-dim: #64748b;
+  --color-cyan: #37d6e6;
+  --color-blue: #5b8cff;
+  --color-gold: #f6c453;
+  --color-silver: #c7d0dc;
+  --color-bronze: #c98b5a;
+  --color-danger: #f87171;
+  --color-ok: #4ade80;
+  --color-prose: #d7e1ef;
+  --color-prose-strong: #f2f7ff;
+  --color-code: #070c14;
+  --color-code-ink: #c9d8ec;
+  --color-panel-solid: #0a111d;
+  --color-knob: #e9eff9;
+  --color-toast-error: #2a1216;
+  --color-toast-ok: #0f2318;
+  --color-scrim: #000000;
+
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+}
+
+:root {
+  color-scheme: dark;
+  --star-locked-fill: #1a2436;
+  --star-locked-stroke: #33415c;
+  --star-failed-fill: #2b3850;
+  --star-failed-stroke: #3a4a66;
+  --star-lock-ink: #7d8ba3;
+  --map-band-1: rgba(55, 214, 230, 0.07);
+  --map-band-2: rgba(91, 140, 255, 0.03);
+  --scroll-thumb: #2a3a55;
+}
+
+html,
+body {
+  background-color: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background-image:
+    radial-gradient(900px 500px at 12% -8%, rgba(55, 214, 230, 0.11), transparent 65%),
+    radial-gradient(800px 500px at 88% 0%, rgba(91, 140, 255, 0.1), transparent 60%),
+    linear-gradient(180deg, #080c14 0%, #060911 55%, #05070d 100%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(55, 214, 230, 0.3);
+}
+
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] *::before,
+html[data-reduce-motion="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-reduce-motion="false"]) * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 课程正文 */
+.course-prose {
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--color-prose);
+  word-break: break-word;
+}
+.course-prose p {
+  margin: 0.85em 0;
+}
+.course-prose strong {
+  color: var(--color-prose-strong);
+  font-weight: 600;
+}
+.course-prose a {
+  color: var(--color-cyan);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(55, 214, 230, 0.4);
+}
+.course-prose a:hover {
+  text-decoration-color: var(--color-cyan);
+}
+.course-prose h3,
+.course-prose h4,
+.course-prose h5 {
+  color: var(--color-prose-strong);
+  font-weight: 650;
+  margin: 1.6em 0 0.6em;
+  scroll-margin-top: 96px;
+}
+.course-prose h3 {
+  font-size: 1.12rem;
+  border-left: 3px solid var(--color-cyan);
+  padding-left: 0.65rem;
+}
+.course-prose h4 {
+  font-size: 1rem;
+}
+.course-prose ul,
+.course-prose ol {
+  margin: 0.8em 0;
+  padding-left: 1.35rem;
+}
+.course-prose ul {
+  list-style: disc;
+}
+.course-prose ol {
+  list-style: decimal;
+}
+.course-prose li {
+  margin: 0.32em 0;
+}
+.course-prose li > ul,
+.course-prose li > ol {
+  margin: 0.3em 0;
+}
+.course-prose blockquote {
+  margin: 1em 0;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid color-mix(in oklab, var(--color-blue) 60%, transparent);
+  background: color-mix(in oklab, var(--color-blue) 8%, transparent);
+  border-radius: 0 10px 10px 0;
+  color: var(--color-prose);
+}
+.course-prose blockquote p {
+  margin: 0.35em 0;
+}
+.course-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: color-mix(in oklab, var(--color-cyan) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-cyan) 20%, transparent);
+  color: var(--color-cyan);
+  padding: 0.12em 0.4em;
+  border-radius: 5px;
+}
+.course-prose pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: 0.86em;
+}
+.course-prose table {
+  width: 100%;
+  margin: 1.1em 0;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  min-width: 460px;
+}
+.course-prose th,
+.course-prose td {
+  border: 1px solid var(--color-line-soft);
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  vertical-align: top;
+}
+.course-prose th {
+  background: color-mix(in oklab, var(--color-cyan) 8%, transparent);
+  color: var(--color-prose-strong);
+  font-weight: 600;
+}
+.course-prose tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+.course-prose img {
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--color-line-soft);
+  margin: 1.2em auto;
+  display: block;
+  background: var(--color-code);
+}
+.course-prose hr {
+  border: 0;
+  border-top: 1px solid var(--color-line-soft);
+  margin: 1.6em 0;
+}
+.course-prose details {
+  margin: 1em 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--color-line-soft);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.course-prose summary {
+  cursor: pointer;
+  color: var(--color-prose);
+  font-weight: 600;
+}
+.course-prose summary:hover {
+  color: var(--color-cyan);
+}
+
+/* 星图 */
+.star-node {
+  cursor: pointer;
+  outline: none;
+}
+.star-node:focus-visible .star-shape {
+  stroke: var(--color-cyan);
+  stroke-width: 2;
+}
+.star-node:hover .star-label {
+  fill: var(--color-prose-strong);
+}
+
+.map-grid line {
+  stroke: rgba(55, 214, 230, 0.05);
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.08);
+  }
+}
+.pulse-dot {
+  animation: pulse-glow 2.6s ease-in-out infinite;
+}
+
+/* SVG 元素必须用 fill-box 作为变换基准，否则会围绕整个画布中心缩放而“漂移” */
+circle.pulse-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes float-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.float-in {
+  animation: float-in 0.35s ease-out both;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -220% 0;
+  }
+  to {
+    background-position: 220% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, #101827 25%, #172235 50%, #101827 75%);
+  background-size: 220% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.card-glow {
+  box-shadow:
+    0 0 0 1px rgba(55, 214, 230, 0.14),
+    0 10px 40px -18px rgba(55, 214, 230, 0.45);
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+
+/* ---------------- 纸质书页皮肤 ---------------- */
+html[data-theme="paper"] {
+  color-scheme: light;
+  --color-void: #f1e7d4;
+  --color-panel: #fbf5e8;
+  --color-panel2: #f5ebd8;
+  --color-line: #d8c7a9;
+  --color-line-soft: #e7d9bf;
+  --color-ink: #2f2a23;
+  --color-muted: #6d604e;
+  --color-dim: #8b7b62;
+  --color-cyan: #1b6a72;
+  --color-blue: #3c5f95;
+  --color-gold: #9d7018;
+  --color-silver: #74766e;
+  --color-bronze: #955f2e;
+  --color-danger: #a8423a;
+  --color-ok: #3c754b;
+  --color-prose: #39342b;
+  --color-prose-strong: #201d17;
+  --color-code: #efe3cd;
+  --color-code-ink: #43392c;
+  --color-panel-solid: #f9f2e3;
+  --color-knob: #fffdf6;
+  --color-toast-error: #f5ded8;
+  --color-toast-ok: #e4eedd;
+  --color-scrim: #4a3c26;
+  --star-locked-fill: #ded0b6;
+  --star-locked-stroke: #b6a382;
+  --star-failed-fill: #cdbda2;
+  --star-failed-stroke: #a9967a;
+  --star-lock-ink: #89795f;
+  --map-band-1: rgba(27, 106, 114, 0.09);
+  --map-band-2: rgba(60, 95, 149, 0.05);
+  --scroll-thumb: #c6b592;
+}
+
+html[data-theme="paper"] body {
+  background-color: var(--color-void);
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(120, 95, 60, 0.035) 0px,
+      rgba(120, 95, 60, 0.035) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(900px 520px at 10% -10%, rgba(176, 143, 88, 0.2), transparent 65%),
+    radial-gradient(800px 500px at 90% 0%, rgba(160, 130, 80, 0.1), transparent 60%),
+    linear-gradient(180deg, #f6eedf 0%, #f0e6d2 55%, #eaddc6 100%);
+  background-attachment: fixed;
+}
+
+/* 书页内文用宋体，更像真实教材 */
+html[data-theme="paper"] .course-prose {
+  font-family: "Songti SC", "STSong", "SimSun", "Noto Serif SC", serif;
+  font-size: 16px;
+  line-height: 1.95;
+}
+html[data-theme="paper"] .course-prose code,
+html[data-theme="paper"] .course-prose pre {
+  font-family: var(--font-mono);
+}
+html[data-theme="paper"] .course-prose img {
+  box-shadow: 0 2px 10px -6px rgba(80, 60, 30, 0.35);
+}
+html[data-theme="paper"] .skeleton {
+  background: linear-gradient(90deg, #eadfc9 25%, #f5ecda 50%, #eadfc9 75%);
+  background-size: 220% 100%;
+}
+html[data-theme="paper"] .card-glow {
+  box-shadow:
+    0 0 0 1px rgba(120, 95, 60, 0.12),
+    0 12px 36px -20px rgba(90, 70, 40, 0.45);
+}
+html[data-theme="paper"] ::selection {
+  background: rgba(27, 106, 114, 0.18);
+}
