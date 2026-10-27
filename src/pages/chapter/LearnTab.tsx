@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChapterContent, ChapterMeta } from "../../types";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { ChapterContent, ChapterMeta, ChapterSection } from "../../types";
 import { useApp } from "../../state/AppContext";
-import { Badge, Button, Card, cn } from "../../components/ui";
+import { Badge, Button, Card, ProgressBar, cn } from "../../components/ui";
 import { Link } from "react-router-dom";
 import { CourseBlocks, MarkdownText } from "../../components/Markdown";
 import { buildStudyCheck, type StudyCheck } from "../../lib/domain/localContent";
@@ -13,10 +13,12 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
   const chapterProgress = progress.chapterProgress[chapter.id];
   const readSet = useMemo(() => new Set(chapterProgress?.sectionsRead ?? []), [chapterProgress?.sectionsRead]);
   const [activeSectionId, setActiveSectionId] = useState(content.sections[0]?.id ?? "");
+  const [activeSubId, setActiveSubId] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [notes, setNotes] = useState(chapterProgress?.notes ?? "");
   const [notesSaved, setNotesSaved] = useState(true);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const navRef = useRef<HTMLElement | null>(null);
 
   const checks = useMemo(() => {
     const map: Record<string, StudyCheck> = {};
@@ -31,22 +33,57 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
     setNotesSaved(true);
   }, [chapter.id]);
 
+  // 目录高亮：以视口上方 128px 为基准线，取最后一个越线的节/小节。
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        const id = visible?.target.getAttribute("data-section-id");
-        if (id) setActiveSectionId(id);
-      },
-      { rootMargin: "-20% 0px -60% 0px", threshold: [0, 0.2, 0.5, 0.8] },
-    );
-    for (const element of Object.values(sectionRefs.current)) {
-      if (element) observer.observe(element);
-    }
-    return () => observer.disconnect();
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const line = 128;
+      let currentSection = content.sections[0]?.id ?? "";
+      for (const section of content.sections) {
+        const element = sectionRefs.current[section.id];
+        if (element && element.getBoundingClientRect().top <= line) currentSection = section.id;
+      }
+      setActiveSectionId(currentSection);
+
+      let currentSub = "";
+      const activeContent = content.sections.find((section) => section.id === currentSection);
+      for (const heading of activeContent?.subheadings ?? []) {
+        const element = document.getElementById(heading.id);
+        if (element && element.getBoundingClientRect().top <= line) currentSub = heading.id;
+      }
+      setActiveSubId(currentSub);
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, [content]);
+
+  // 目录内部滚动：让当前小节保持在目录可视范围内（只调整目录自身，不拖动页面）。
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav || nav.offsetParent === null) return;
+    const item =
+      nav.querySelector<HTMLElement>(`[data-nav-sub="${activeSubId}"]`) ??
+      nav.querySelector<HTMLElement>(`[data-nav-section="${activeSectionId}"]`);
+    if (!item) return;
+    const navRect = nav.getBoundingClientRect();
+    const itemRect = item.getBoundingClientRect();
+    const padding = 14;
+    if (itemRect.top < navRect.top + padding) {
+      nav.scrollTop -= navRect.top + padding - itemRect.top;
+    } else if (itemRect.bottom > navRect.bottom - padding) {
+      nav.scrollTop += itemRect.bottom - (navRect.bottom - padding);
+    }
+  }, [activeSectionId, activeSubId]);
 
   useEffect(() => {
     if (!activeSectionId) return;
@@ -99,9 +136,36 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
   const activeSection = content.sections.find((section) => section.id === activeSectionId);
   const readCount = chapter.sections.filter((section) => readSet.has(section.id)).length;
 
+  const jumpToSection = (sectionId: string) => {
+    sectionRefs.current[sectionId]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveSectionId(sectionId);
+    setActiveSubId("");
+  };
+
+  const jumpToSub = (sectionId: string, subId: string) => {
+    document.getElementById(subId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveSectionId(sectionId);
+    setActiveSubId(subId);
+  };
+
   return (
-    <div className="space-y-4">
-      <Card className="p-4">
+    <div className="xl:grid xl:grid-cols-[232px_minmax(0,1fr)] xl:items-start xl:gap-5">
+      <SectionNav
+        containerRef={navRef}
+        sections={content.sections}
+        readSet={readSet}
+        checks={chapterProgress?.checks}
+        activeSectionId={activeSectionId}
+        activeSubId={activeSubId}
+        readCount={readCount}
+        onAsk={() => setChatOpen(true)}
+        onJumpSection={jumpToSection}
+        onJumpSub={jumpToSub}
+        className="hidden xl:sticky xl:top-20 xl:block xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto"
+      />
+
+      <div className="min-w-0 space-y-4">
+      <Card className="p-4 xl:hidden">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-ink">逐节学习</h2>
@@ -121,10 +185,7 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
               <button
                 key={section.id}
                 type="button"
-                onClick={() => {
-                  sectionRefs.current[section.id]?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  setActiveSectionId(section.id);
-                }}
+                onClick={() => jumpToSection(section.id)}
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] transition-colors",
                   activeSectionId === section.id
@@ -241,6 +302,7 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
           className="mt-3 w-full resize-y rounded-xl border border-line bg-panel2/50 px-3 py-2.5 text-[13px] leading-relaxed text-ink outline-none placeholder:text-dim focus:border-cyan/50"
         />
       </Card>
+      </div>
 
       {chatOpen && (
         <ChatPanel
@@ -251,6 +313,110 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
         />
       )}
     </div>
+  );
+}
+
+function SectionNav({
+  sections,
+  readSet,
+  checks,
+  activeSectionId,
+  activeSubId,
+  readCount,
+  onAsk,
+  onJumpSection,
+  onJumpSub,
+  className,
+  containerRef,
+}: {
+  sections: ChapterSection[];
+  readSet: Set<string>;
+  checks?: Record<string, { answered: boolean }>;
+  activeSectionId: string;
+  activeSubId: string;
+  readCount: number;
+  onAsk: () => void;
+  onJumpSection: (sectionId: string) => void;
+  onJumpSub: (sectionId: string, subId: string) => void;
+  className?: string;
+  containerRef?: RefObject<HTMLElement | null>;
+}) {
+  return (
+    <aside
+      ref={containerRef}
+      aria-label="章节目录"
+      className={cn("rounded-2xl border border-line/80 bg-panel/75 p-2.5 backdrop-blur-sm", className)}
+    >
+      <div className="flex items-baseline justify-between gap-2 px-1">
+        <h2 className="text-sm font-semibold text-ink">逐节学习</h2>
+        <span className="shrink-0 text-[10px] tabular-nums text-cyan">
+          {readCount}/{sections.length} 节
+        </span>
+      </div>
+      <ProgressBar value={readCount} max={sections.length} className="mt-2 px-1" />
+      <ol className="mt-2">
+        {sections.map((section, index) => {
+          const read = readSet.has(section.id);
+          const answered = Boolean(checks?.[section.id]?.answered);
+          const active = activeSectionId === section.id;
+          return (
+            <li key={section.id}>
+              <button
+                type="button"
+                onClick={() => onJumpSection(section.id)}
+                data-nav-section={section.id}
+                aria-current={active ? "true" : undefined}
+                title={section.title}
+                className={cn(
+                  "flex w-full items-start gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[11.5px] leading-snug transition-colors",
+                  active ? "bg-cyan/10 text-cyan" : "text-muted hover:bg-white/[0.04] hover:text-ink",
+                )}
+              >
+                <span className="mt-px font-mono text-[9px] opacity-60">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span className="line-clamp-2 min-w-0 flex-1">{section.title}</span>
+                <span
+                  aria-hidden="true"
+                  className={cn("text-[10px]", read ? "text-ok" : answered ? "text-gold" : "text-dim")}
+                >
+                  {read ? "✓" : answered ? "◐" : "○"}
+                </span>
+              </button>
+              {section.subheadings.length > 0 && (
+                <ul className="my-0.5 ml-[19px] space-y-px border-l border-line/50 pl-1.5">
+                  {section.subheadings.map((heading) => {
+                    const subActive = activeSubId === heading.id;
+                    return (
+                      <li key={heading.id}>
+                        <button
+                          type="button"
+                          onClick={() => onJumpSub(section.id, heading.id)}
+                          data-nav-sub={heading.id}
+                          aria-current={subActive ? "true" : undefined}
+                          title={heading.title}
+                          className={cn(
+                            "block w-full truncate rounded-md px-1.5 py-1 text-left text-[11px] leading-snug transition-colors",
+                            subActive
+                              ? "bg-cyan/10 text-cyan"
+                              : "text-dim hover:bg-white/[0.03] hover:text-muted",
+                          )}
+                        >
+                          {heading.title}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <Button variant="secondary" size="sm" className="mt-2.5 w-full" onClick={onAsk}>
+        ✦ 问 AI 助手
+      </Button>
+    </aside>
   );
 }
 
