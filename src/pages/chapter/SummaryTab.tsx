@@ -70,12 +70,32 @@ export function SummaryTab({ chapter, content }: { chapter: ChapterMeta; content
 
   const display = status === "error" ? localSummary : summary;
 
+  const checkedChecklist = useMemo(
+    () => new Set(chapterProgress?.summaryChecklist ?? []),
+    [chapterProgress?.summaryChecklist],
+  );
+  const checkedCount = display.checklist.filter((item) => checkedChecklist.has(item)).length;
+  const checklistTotal = display.checklist.length;
+  const allChecked = checklistTotal > 0 && checkedCount === checklistTotal;
+
+  const toggleChecklist = (item: string) => {
+    updateChapterProgress(chapter.id, (current) => {
+      const currentItems = new Set(current.summaryChecklist ?? []);
+      if (currentItems.has(item)) currentItems.delete(item);
+      else currentItems.add(item);
+      return {
+        ...current,
+        summaryChecklist: [...currentItems].filter((value) => display.checklist.includes(value)),
+      };
+    });
+  };
+
   const confirm = () => {
     updateChapterProgress(chapter.id, (current) => ({ ...current, summaryRead: true }));
   };
 
   const copyAll = async () => {
-    const text = buildMarkdownSummary(chapter.title, display);
+    const text = buildMarkdownSummary(chapter.title, display, checkedChecklist);
     try {
       await navigator.clipboard.writeText(text);
       notify("总结已复制到剪贴板", "success");
@@ -269,14 +289,46 @@ export function SummaryTab({ chapter, content }: { chapter: ChapterMeta; content
         </Card>
 
         <Card className="p-4">
-          <SectionTitle title="自测清单" hint="能全部打勾再参加考试" />
-          <ul className="mt-2 space-y-1.5 text-[12.5px] leading-relaxed text-muted">
-            {display.checklist.map((item, index) => (
-              <li key={index} className="flex gap-2">
-                <span className="text-dim">☐</span>
-                {item}
-              </li>
-            ))}
+          <SectionTitle
+            title="自测清单"
+            hint={
+              checklistTotal === 0
+                ? "能全部打勾再参加考试"
+                : allChecked
+                  ? "全部勾选 · 可以参加考试"
+                  : `${checkedCount}/${checklistTotal} 已勾选`
+            }
+          />
+          <ul className="mt-1.5 space-y-0.5 text-[12.5px] leading-relaxed text-muted">
+            {display.checklist.map((item, index) => {
+              const checked = checkedChecklist.has(item);
+              return (
+                <li key={`${index}-${item}`}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={checked}
+                    onClick={() => toggleChecklist(item)}
+                    className={cn(
+                      "-mx-1 flex w-full cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-left transition hover:bg-panel2/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan/40",
+                      checked ? "text-dim" : "text-muted",
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "mt-[2px] grid h-[15px] w-[15px] shrink-0 place-items-center rounded-[4px] border text-[10px] leading-none transition after:content-['✓']",
+                        checked
+                          ? "border-ok/70 bg-ok/15 text-ok"
+                          : "border-line/80 bg-panel2/30 text-transparent",
+                      )}
+                    />
+                    <span className={cn("transition", checked && "line-through decoration-dim/40")}>{item}</span>
+                  </button>
+                </li>
+              );
+            })}
+            {display.checklist.length === 0 && <li className="text-dim">暂无</li>}
           </ul>
         </Card>
       </div>
@@ -415,7 +467,7 @@ function Mindmap({ node }: { node: MindmapNode }) {
   );
 }
 
-function buildMarkdownSummary(title: string, summary: ChapterSummary): string {
+function buildMarkdownSummary(title: string, summary: ChapterSummary, checked: Set<string>): string {
   const lines: string[] = [`# ${title} · 复习总结`, ""];
   lines.push("## 核心知识点");
   for (const point of summary.corePoints) lines.push(`- **${point.title}**：${point.detail}`);
@@ -426,6 +478,6 @@ function buildMarkdownSummary(title: string, summary: ChapterSummary): string {
   lines.push("", "## 高频考点");
   for (const point of summary.examPoints) lines.push(`- ${point}`);
   lines.push("", "## 自测清单");
-  for (const item of summary.checklist) lines.push(`- [ ] ${item}`);
+  for (const item of summary.checklist) lines.push(`- [${checked.has(item) ? "x" : " "}] ${item}`);
   return lines.join("\n");
 }

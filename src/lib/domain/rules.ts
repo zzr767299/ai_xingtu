@@ -306,6 +306,7 @@ export function mergeProgress(
       checks: { ...prev.checks, ...next.checks },
       summaryRead: prev.summaryRead || next.summaryRead,
       summaryBookmarked: prev.summaryBookmarked || next.summaryBookmarked,
+      summaryChecklist: [...new Set([...(prev.summaryChecklist ?? []), ...(next.summaryChecklist ?? [])])],
       lastSectionId: next.updatedAt >= prev.updatedAt ? next.lastSectionId : prev.lastSectionId,
       notes: next.notes ?? prev.notes,
       updatedAt: Math.max(prev.updatedAt, next.updatedAt),

@@ -264,6 +264,7 @@ const progressSchema = z.object({
       ),
       summaryRead: z.boolean(),
       summaryBookmarked: z.boolean().optional(),
+      summaryChecklist: z.array(z.string()).optional(),
       lastSectionId: z.string().optional(),
       notes: z.string().optional(),
       updatedAt: z.number(),

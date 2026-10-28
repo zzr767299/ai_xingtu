@@ -126,6 +126,8 @@ export interface ChapterProgress {
   checks: Record<string, CheckAnswer>;
   summaryRead: boolean;
   summaryBookmarked?: boolean;
+  /** 已勾选的自测清单条目（存条目文本，AI 重新生成后对不上的自动视为未勾选） */
+  summaryChecklist?: string[];
   lastSectionId?: string;
   notes?: string;
   updatedAt: number;
