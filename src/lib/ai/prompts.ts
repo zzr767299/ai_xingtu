@@ -1,7 +1,7 @@
 import type { ChapterContent, ChapterMeta, ExamQuestion, Glossary } from "../../types";
 import { questionTypeLabel, type ExamTemplate } from "../domain/exam";
 
-export const PROMPT_VERSION = "v2";
+export const PROMPT_VERSION = "v3";
 
 function truncate(text: string, limit: number): string {
   if (text.length <= limit) return text;
@@ -111,10 +111,17 @@ export function paperPrompt(
 3. 选择题 answer 必须是 options 中某个 option 的 key；options 至少 3 个，key 用 A/B/C/D，正确答案只有一个。
 4. 填空题 answer 为简短短语；可提供 answerAlternatives 兼容同义写法。
 5. 主观题（辨析/应用/代码阅读/代码补全/实操/设计）必须提供 rubric.criteria，且每条 criteria 的 points 之和必须严格等于该题 points；每条至少 1 个可用于判分的关键词。主观题同样必须填写参考答案 answer（用于关键词判分与阅卷参考），不能省略或留空。
-6. 代码题只能使用原文中出现过的代码，不得臆造 API；code 字段原样摘录代码。
-7. 题目要覆盖本章核心知识点，避免大量重复记忆题；难度标注 easy/medium/hard。
-8. explanation 说明答案依据，涉及原文时引用知识点标题。
-返回字段：{"questions":[{"type","points","knowledgePointTitle","prompt","options":[{"key","text"}],"answer","answerAlternatives":[],"rubric":{"criteria":[{"point","keywords":[],"points":number}],"notes":""},"explanation","difficulty","code"}]}`,
+6. 题目必须考查理解、迁移、排错与选型能力，禁止出死记硬背字面量的题：
+   - 不得考 Base URL、URL、域名、端口、文件路径、版本号、密钥前缀、默认参数数值、价格等随时可以查文档确认的字面量。
+   - 填空题的答案应是概念、机制、术语或适用场景，不能是网址、路径或一长串参数值。
+   - 反面示例（不要出）：「最常见的 Base URL 是 ____」「默认端口号是 ____」「pip install 的包名是 ____」。
+7. 代码题必须在 code 字段给出代码，题干只写任务说明，不要在 prompt 里重复贴代码：
+   - code-read（代码阅读）：prompt 说明要分析什么；code 原样摘录原文中的完整代码；codeLang 写语言。
+   - code-fill（代码补全）：prompt 说明要补哪一行；code 存放原文代码，但必须把要补的那一行替换成「# ____」（Python）或「// ____」（其他语言）的占位行；不要把被挖掉的那一行留在 code 里。
+   - 任何代码题都不能出现「阅读下面代码 / 下面是一个消息列表」却看不到代码的情况；原文没有代码时不要出代码题。
+8. 题目要覆盖本章核心知识点，避免多道题重复同一句原文；难度标注 easy/medium/hard。
+9. explanation 说明答案依据，涉及原文时引用知识点标题。
+返回字段：{"questions":[{"type","points","knowledgePointTitle","prompt","options":[{"key","text"}],"answer","answerAlternatives":[],"rubric":{"criteria":[{"point","keywords":[],"points":number}],"notes":""},"explanation","difficulty","code","codeLang"}]}`,
     user: `章节信息：\n\n${digest}\n\n试卷配置（${template.label}）：\n${slots}\n\n请出一份总分恰好 80 分的试卷 JSON。`,
   };
 }
@@ -122,7 +129,10 @@ export function paperPrompt(
 export function repairPrompt(errors: string[], previous: string): { system: string; user: string } {
   return {
     system: `你是试卷/JSON 修复器。上一轮输出未通过结构校验。${JSON_RULES}
-请只修复错误，不要改变题目考查意图；分值必须严格等于 80，主观题评分细则分值和必须等于题目分值。`,
+请只修复错误，不要改变题目考查意图；分值必须严格等于 80，主观题评分细则分值和必须等于题目分值。
+额外要求：
+- 缺少代码的代码题，必须把代码补进 code 字段（代码补全题用「# ____」占位），题干不要重复贴代码。
+- 只考 URL、域名、端口、路径、版本号等字面量的题目，必须改写成考查概念、机制或适用场景的题，但保留原分值与题型。`,
     user: `校验错误：\n${errors.map((error) => `- ${error}`).join("\n")}\n\n上一轮输出：\n${truncate(previous, 12000)}\n\n请输出修复后的完整 JSON。`,
   };
 }

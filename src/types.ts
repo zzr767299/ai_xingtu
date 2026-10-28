@@ -174,7 +174,9 @@ export interface ExamQuestion {
   explanation: string;
   sourceRef?: { sectionId?: string; sectionTitle?: string; quote?: string };
   difficulty: "easy" | "medium" | "hard";
+  /** 代码题展示用的代码；代码补全题存放挖空后的代码，不存放原答案行 */
   code?: string;
+  codeLang?: string;
 }
 
 export interface QuestionGrade {

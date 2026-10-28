@@ -217,7 +217,9 @@ export class AiService {
 
       let validation = validatePaper(questions, 80);
 
-      if (!validation.ok) {
+      // 出卷校验失败时最多修两轮：内容质量问题（字面量题、缺代码）通常一次能改好，
+      // 但推理模型偶尔会漏掉一条，留第二轮避免整卷直接失败。
+      for (let attempt = 0; attempt < 2 && !validation.ok; attempt += 1) {
         const repair = repairPrompt(validation.errors, raw);
         raw = await ask([
           { role: "system", content: repair.system },
@@ -244,7 +246,7 @@ export class AiService {
     return parsed.questions.map((question, index) => {
       const section = chapter.sections.find((item) => item.title === question.knowledgePointTitle);
       const contentSection = content?.sections.find((item) => item.title === question.knowledgePointTitle);
-      return {
+      return normalizeQuestionCode({
         ...question,
         id: `q${index + 1}`,
         knowledgePointId: section?.id ?? contentSection?.id,
@@ -254,7 +256,7 @@ export class AiService {
         rubric: question.rubric
           ? { criteria: question.rubric.criteria, notes: question.rubric.notes }
           : undefined,
-      } as ExamQuestion;
+      } as ExamQuestion);
     });
   }
 
@@ -376,8 +378,54 @@ ${block.code}
   }
 }
 
-function describeParseError(error: unknown): string {
-  if (error instanceof AiValidationError) return error.details.join("；");
+const CODE_FENCE = /```([\w+#.-]*)\r?\n([\s\S]*?)```/;
+
+/**
+ * 代码题的代码可能被模型写进 prompt 或写进 code 字段，统一收敛到 code：
+ * 1. prompt 里有围栏代码而 code 为空时，搬到 code 并在题干中去掉，避免题干与代码框重复；
+ * 2. 代码补全题的 code 若仍包含答案那一行，则替换为占位行，防止直接看到答案。
+ */
+function normalizeQuestionCode(question: ExamQuestion): ExamQuestion {
+  let { prompt, code, codeLang } = question;
+  const fence = CODE_FENCE.exec(prompt ?? "");
+
+  if (fence && !code?.trim()) {
+    code = fence[2].trimEnd();
+    codeLang = codeLang || fence[1] || "text";
+    if (question.type !== "code-fill") {
+      prompt = prompt.replace(CODE_FENCE, "").replace(/\n{3,}/g, "\n\n").trim();
+    }
+  }
+
+  if (question.type === "code-fill" && code?.trim() && !code.includes("____")) {
+    code = blankAnswerLine(code, question.answer, codeLang);
+  }
+
+  return { ...question, prompt, code, codeLang };
+}
+
+function blankAnswerLine(code: string, answer: string, lang: string | undefined): string {
+  const target = answer.trim();
+  if (!target) return code;
+  const lines = code.split("\n");
+  const index = lines.findIndex((line) => {
+    const trimmed = line.trim();
+    return trimmed === target || (target.length >= 6 && trimmed.includes(target));
+  });
+  if (index < 0) return code;
+  const indentation = lines[index].match(/^\s*/)?.[0] ?? "";
+  lines[index] = `${indentation}${commentMarker(code, lang)}`;
+  return lines.join("\n");
+}
+
+function commentMarker(code: string, lang: string | undefined): string {
+  const normalized = (lang ?? "").toLowerCase();
+  if (/^(py|python|bash|sh|shell|yaml|yml|toml|ruby|rb|r|ini|conf)$/.test(normalized)) return "# ____";
+  if (normalized && normalized !== "text") return "// ____";
+  return /^\s*(def |import |from \w+ import|print\()/m.test(code) ? "# ____" : "// ____";
+}
+
+function describeParseError(error: unknown): string {  if (error instanceof AiValidationError) return error.details.join("；");
   if (error instanceof Error) {
     const issues = (error as { issues?: { path: (string | number)[]; message: string }[] }).issues;
     if (issues?.length) {

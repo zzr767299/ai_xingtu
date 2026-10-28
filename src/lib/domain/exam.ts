@@ -97,7 +97,27 @@ export interface PaperValidation {
   errors: string[];
 }
 
-/** 试卷结构校验：总分必须严格等于 80，主观题必须有可执行评分细则。 */
+// 只靠查文档就能确认的字面量：网址、域名、端口、绝对路径。
+const LITERAL_ANSWER = /(?:(?:https?|wss?):\/\/|\bwww\.|\b[\w-]+\.(?:com|cn|org|io|net|dev|ai)\b|\blocalhost(?::\d+)?\b|^\/[\w./-]{2,})/i;
+// 题干明显在要一个可查的字面量，而不是概念理解。
+const LITERAL_PROMPT = /base\s*url|域名|端口号?|文件路径|安装路径|版本号|密钥前缀|api[\s-]*key\s*(?:是|为)|包名是|价格|每百万?\s*tokens?/i;
+
+function literalTriviaReason(question: ExamQuestion): string | null {
+  if (question.type === "fill") {
+    const answer = question.answer.trim();
+    if (LITERAL_ANSWER.test(answer)) return "填空题答案只是网址/路径/端口等可查字面量";
+    if (LITERAL_PROMPT.test(question.prompt) && answer.length <= 80) {
+      return "填空题在考 URL/路径/版本号等可查字面量";
+    }
+  }
+  if (question.type === "choice") {
+    const optionText = (question.options ?? []).map((option) => option.text).join(" ");
+    if (LITERAL_ANSWER.test(optionText)) return "选择题选项是网址/路径等可查字面量";
+  }
+  return null;
+}
+
+/** 试卷结构校验：总分必须严格等于 80，主观题必须有可执行评分细则，代码题必须有代码。 */
 export function validatePaper(questions: ExamQuestion[], expectedTotal = 80): PaperValidation {
   const errors: string[] = [];
   const ids = new Set<string>();
@@ -125,6 +145,18 @@ export function validatePaper(questions: ExamQuestion[], expectedTotal = 80): Pa
       const duplicateOf = prompts.get(promptKey);
       if (duplicateOf) errors.push(`题目内容重复：${question.id} 与 ${duplicateOf}`);
       else prompts.set(promptKey, question.id);
+    }
+
+    const trivia = literalTriviaReason(question);
+    if (trivia) errors.push(`题目 ${question.id} ${trivia}，请改为考查概念理解或实际应用`);
+
+    const hasInlineCode = /```[\s\S]*?```/.test(question.prompt ?? "");
+    if (
+      (question.type === "code-read" || question.type === "code-fill") &&
+      !question.code?.trim() &&
+      !hasInlineCode
+    ) {
+      errors.push(`代码题 ${question.id} 缺少代码内容：请把代码放进 code 字段`);
     }
 
     if (question.type === "choice") {

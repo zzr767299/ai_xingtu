@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { WrongEntry } from "../types";
 import { useApp } from "../state/AppContext";
 import { Badge, Button, Card, EmptyState, LinkButton, cn } from "../components/ui";
-import { MarkdownText } from "../components/Markdown";
+import { CodeBlock, MarkdownText } from "../components/Markdown";
 import { questionTypeLabel } from "../lib/domain/exam";
 import { gradeObjective, gradeSubjectiveLocal } from "../lib/domain/exam";
 import { buildStudyCheck } from "../lib/domain/localContent";
@@ -304,6 +304,9 @@ function WrongCard({
       {open && (
         <div className="border-t border-line/50 px-4 py-3">
           <MarkdownText text={entry.question.prompt} className="text-[13px]" />
+          {entry.question.code && !entry.question.prompt.includes("```") && (
+            <CodeBlock code={entry.question.code} lang={entry.question.codeLang ?? "text"} />
+          )}
 
           <div className="mt-3 grid gap-2 text-[12px] leading-relaxed sm:grid-cols-2">
             <div className="rounded-lg border border-danger/25 bg-danger/[0.06] p-2.5">

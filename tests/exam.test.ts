@@ -107,6 +107,57 @@ describe("试卷 80 分校验", () => {
     expect(result.ok).toBe(false);
     expect(result.errors.join()).toContain("题目 id 重复");
   });
+
+  it("只考 Base URL 等字面量的填空题被拒绝", () => {
+    const paper = Array.from({ length: 7 }, (_, index) => choiceQuestion(index + 1));
+    paper.push({
+      id: "q8",
+      type: "fill",
+      points: 10,
+      prompt: "本章百炼 OpenAI 兼容接口中，最常见的 Base URL 是：____。",
+      answer: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      explanation: "原文给出了兼容模式地址。",
+      difficulty: "easy",
+    });
+    const result = validatePaper(paper);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join()).toContain("字面量");
+  });
+
+  it("代码题缺少代码内容时拒绝", () => {
+    const paper = Array.from({ length: 7 }, (_, index) => choiceQuestion(index + 1));
+    paper.push({
+      id: "q8",
+      type: "code-read",
+      points: 10,
+      prompt: "阅读下面代码，判断它更接近 LLM 风格还是 Chat Model 风格。",
+      answer: "接近 LLM 风格，输入输出都是字符串。",
+      rubric: { criteria: [{ point: "说明输入输出形式", keywords: ["字符串", "输入"], points: 10 }] },
+      explanation: "参考模型分类一节。",
+      difficulty: "medium",
+    });
+    const result = validatePaper(paper);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join()).toContain("缺少代码");
+  });
+
+  it("代码题把代码放在 code 字段时通过", () => {
+    const paper = Array.from({ length: 7 }, (_, index) => choiceQuestion(index + 1));
+    paper.push({
+      id: "q8",
+      type: "code-read",
+      points: 10,
+      prompt: "阅读下面的代码，判断它更接近 LLM 风格还是 Chat Model 风格。",
+      answer: "接近 LLM 风格，输入输出都是字符串。",
+      code: 'response = llm.invoke("你好")\nprint(response)',
+      codeLang: "python",
+      rubric: { criteria: [{ point: "说明输入输出形式", keywords: ["字符串", "输入"], points: 10 }] },
+      explanation: "参考模型分类一节。",
+      difficulty: "medium",
+    });
+    const result = validatePaper(paper);
+    expect(result.ok, result.errors.join("；")).toBe(true);
+  });
 });
 
 describe("客观题判分", () => {

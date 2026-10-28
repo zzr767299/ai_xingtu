@@ -71,6 +71,7 @@ export const aiQuestionSchema = z.object({
   explanation: z.string().min(4),
   difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
   code: z.string().optional(),
+  codeLang: z.string().optional(),
 });
 
 export const paperSchema = z.object({

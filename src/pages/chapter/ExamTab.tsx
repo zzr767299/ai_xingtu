@@ -12,7 +12,7 @@ import type {
 import { useApp } from "../../state/AppContext";
 import { Badge, Button, Card, LinkButton, Modal, cn } from "../../components/ui";
 import { StarShape } from "../../components/StarIcon";
-import { MarkdownText } from "../../components/Markdown";
+import { CodeBlock, MarkdownText } from "../../components/Markdown";
 import {
   gradeObjective,
   gradeSubjectiveLocal,
@@ -594,6 +594,10 @@ function ExamQuestionCard({
         <MarkdownText text={question.prompt} />
       </div>
 
+      {question.code && !question.prompt.includes("```") && (
+        <CodeBlock code={question.code} lang={question.codeLang ?? "text"} />
+      )}
+
       {question.type === "choice" && question.options ? (
         <div className="mt-2 grid gap-1.5">
           {question.options.map((option) => (
@@ -805,6 +809,9 @@ function ExamResult({
 
                 {open && grade && (
                   <div className="border-t border-line/50 px-3 py-3 text-[12px] leading-relaxed text-muted">
+                    {question.code && !question.prompt.includes("```") && (
+                      <CodeBlock code={question.code} lang={question.codeLang ?? "text"} />
+                    )}
                     <div>
                       <span className="text-dim">你的答案：</span>
                       <span className="whitespace-pre-wrap text-ink">{attempt.answers[question.id] || "（未作答）"}</span>

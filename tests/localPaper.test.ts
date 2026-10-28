@@ -33,6 +33,22 @@ describe("真实课程数据上的本地内容生产", () => {
     }
   });
 
+  it("代码题把代码放在 code 字段，题干不重复贴代码，补全题不泄露答案", () => {
+    for (const chapter of course.chapters) {
+      const content = loadChapterContent(chapter.id);
+      const questions = generateLocalPaper(chapter, content, glossary);
+      for (const question of questions) {
+        if (question.type !== "code-read" && question.type !== "code-fill") continue;
+        expect(question.prompt.includes("```"), `${chapter.title} / ${question.id}`).toBe(false);
+        expect((question.code ?? "").trim().length, `${chapter.title} / ${question.id}`).toBeGreaterThan(0);
+        if (question.type === "code-fill") {
+          expect(question.code ?? "", `${chapter.title} / ${question.id}`).toContain("____");
+          expect(question.code ?? "", `${chapter.title} / ${question.id}`).not.toContain(question.answer);
+        }
+      }
+    }
+  });
+
   it("概念型试卷的多道辨析题不会重复", () => {
     const conceptChapters = course.chapters.filter((chapter) => chapter.profile === "concept");
     expect(conceptChapters.length).toBeGreaterThan(0);

@@ -517,15 +517,23 @@ function makeCodeRead(
   }));
   const sum = criteria.reduce((total, criterion) => total + criterion.points, 0);
   if (criteria.length) criteria[criteria.length - 1].points += points - sum;
+  // 同一章节可能抽到多段代码，用不同视角区分题干，避免被判为重复题
+  const angles = [
+    "说明它的整体作用与关键调用",
+    "说明每个关键参数的来源与作用",
+    "指出它可能报错或卡住的位置",
+  ];
+  const angle = angles[cursor % angles.length];
 
   return {
     id: nextId("code-read"),
     type: "code-read",
     points,
     knowledgePointTitle: block.section.title,
-    prompt: `阅读下面这段代码，说明它的整体作用、关键调用，以及在实际运行时可能出现的问题。\n\n\`\`\`${block.lang}\n${block.code.slice(0, 1200)}\n\`\`\``,
+    prompt: `阅读下面这段来自「${block.section.title}」的代码，${angle}，以及在实际运行时可能出现的问题。`,
     answer: `应说明代码的整体目的，并解释 ${identifiers.join("、")} 等关键标识符的作用。`,
-    code: block.code,
+    code: block.code.slice(0, 2000),
+    codeLang: block.lang,
     rubric: {
       criteria: criteria.length
         ? criteria
@@ -554,6 +562,11 @@ function makeCodeFill(
   const indentation = target.match(/^\s*/)?.[0] ?? "";
   const blanked = [...lines];
   blanked[targetIndex] = `${indentation}# ____`;
+  // 长代码只展示挖空行附近的片段，保证挖空行不会因为截断而消失
+  const blankedCode =
+    blanked.join("\n").length <= 2000
+      ? blanked.join("\n")
+      : blanked.slice(Math.max(0, targetIndex - 24), targetIndex + 12).join("\n");
 
   const tokens = (target.match(/[A-Za-z_][A-Za-z0-9_]{2,}|[（(][^)）]*[)）]/g) ?? [])
     .filter((token) => token.length >= 3)
@@ -569,9 +582,11 @@ function makeCodeFill(
     type: "code-fill",
     points,
     knowledgePointTitle: block.section.title,
-    prompt: `下面代码缺少了一行，请补全缺失的代码。\n\n\`\`\`${block.lang}\n${blanked.join("\n").slice(0, 1200)}\n\`\`\`\n\n只写缺失的那一行。`,
+    prompt: `下面这段来自「${block.section.title}」的代码缺少了一行，请补全缺失的代码。只写缺失的那一行。`,
     answer: target.trim(),
-    code: block.code,
+    // 展示挖空后的代码：不能把原始代码放进 code，否则答案会直接暴露
+    code: blankedCode,
+    codeLang: block.lang,
     rubric: {
       criteria: criteria.length ? criteria : [{ point: "补全关键调用", keywords: ["("], points }],
       notes: "本地判分按关键标识符是否出现估算，不等同于真实运行测试。",
