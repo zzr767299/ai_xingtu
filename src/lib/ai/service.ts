@@ -184,28 +184,50 @@ export class AiService {
 
     return this.cached(key, Boolean(options.force), async () => {
       const { system, user } = paperPrompt(digest, template);
-      const raw = await requestChat(
-        this.ai,
-        [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        { signal: options.signal },
-      );
+      // 整卷 JSON 很长，推理模型尤其容易把额度耗在思考上，这里至少给到 8000
+      const paperTokens = Math.max(this.ai.maxTokens, 8000);
+      const ask = (messages: ChatMessageInput[]) =>
+        requestChat(this.ai, messages, { signal: options.signal, maxTokens: paperTokens });
 
-      let questions = this.mapQuestions(raw, chapter, content);
+      let raw = await ask([
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ]);
+
+      let questions: ExamQuestion[];
+      try {
+        questions = this.mapQuestions(raw, chapter, content);
+      } catch (error) {
+        // 出卷必须像其他 JSON 功能一样自动修复一次，否则用户只会看到原始 Zod 报错
+        const errors = [describeParseError(error)];
+        const repair = repairPrompt(errors, raw);
+        raw = await ask([
+          { role: "system", content: repair.system },
+          { role: "user", content: repair.user },
+        ]);
+        try {
+          questions = this.mapQuestions(raw, chapter, content);
+        } catch (secondError) {
+          throw new AiValidationError("AI 生成的试卷结构不合法，已自动修复一次仍失败。", [
+            ...errors,
+            describeParseError(secondError),
+          ]);
+        }
+      }
+
       let validation = validatePaper(questions, 80);
 
       if (!validation.ok) {
-        const repaired = await requestChat(
-          this.ai,
-          [
-            { role: "system", content: repairPrompt(validation.errors, raw).system },
-            { role: "user", content: repairPrompt(validation.errors, raw).user },
-          ],
-          { signal: options.signal },
-        );
-        questions = this.mapQuestions(repaired, chapter, content);
+        const repair = repairPrompt(validation.errors, raw);
+        raw = await ask([
+          { role: "system", content: repair.system },
+          { role: "user", content: repair.user },
+        ]);
+        try {
+          questions = this.mapQuestions(raw, chapter, content);
+        } catch (error) {
+          throw new AiValidationError("AI 生成的试卷结构不合法。", [describeParseError(error)]);
+        }
         validation = validatePaper(questions, 80);
       }
 

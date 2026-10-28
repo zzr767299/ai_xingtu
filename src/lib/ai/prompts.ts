@@ -1,7 +1,7 @@
 import type { ChapterContent, ChapterMeta, ExamQuestion, Glossary } from "../../types";
 import { questionTypeLabel, type ExamTemplate } from "../domain/exam";
 
-export const PROMPT_VERSION = "v1";
+export const PROMPT_VERSION = "v2";
 
 function truncate(text: string, limit: number): string {
   if (text.length <= limit) return text;
@@ -110,7 +110,7 @@ export function paperPrompt(
 2. 所有题目分值之和必须严格等于 80 分。
 3. 选择题 answer 必须是 options 中某个 option 的 key；options 至少 3 个，key 用 A/B/C/D，正确答案只有一个。
 4. 填空题 answer 为简短短语；可提供 answerAlternatives 兼容同义写法。
-5. 主观题（辨析/应用/代码阅读/代码补全/实操/设计）必须提供 rubric.criteria，且每条 criteria 的 points 之和必须严格等于该题 points；每条至少 1 个可用于判分的关键词。
+5. 主观题（辨析/应用/代码阅读/代码补全/实操/设计）必须提供 rubric.criteria，且每条 criteria 的 points 之和必须严格等于该题 points；每条至少 1 个可用于判分的关键词。主观题同样必须填写参考答案 answer（用于关键词判分与阅卷参考），不能省略或留空。
 6. 代码题只能使用原文中出现过的代码，不得臆造 API；code 字段原样摘录代码。
 7. 题目要覆盖本章核心知识点，避免大量重复记忆题；难度标注 easy/medium/hard。
 8. explanation 说明答案依据，涉及原文时引用知识点标题。

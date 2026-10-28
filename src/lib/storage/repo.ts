@@ -68,7 +68,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   useProxy: false,
   proxyUrl: "http://localhost:8787/api/ai/chat",
   temperature: 0.4,
-  maxTokens: 2200,
+  maxTokens: 8000,
   timeoutMs: 60000,
 };
 

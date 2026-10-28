@@ -85,4 +85,47 @@ describe("AI 配置校验", () => {
       requestChat({ ...proxyConfig, useProxy: false }, [{ role: "user", content: "ping" }]),
     ).rejects.toThrow("AI 服务尚未配置");
   });
+
+  it("输出被截断时自动提高 max_tokens 重试一次", async () => {
+    const budgets: number[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { max_tokens: number };
+      budgets.push(body.max_tokens);
+      if (budgets.length === 1) {
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: "{\"questions\":[" }, finish_reason: "length" }],
+            usage: { completion_tokens_details: { reasoning_tokens: 1900 } },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: "{\"questions\":[]}" }, finish_reason: "stop" }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as unknown as typeof fetch;
+
+    const reply = await requestChat(proxyConfig, [{ role: "user", content: "出卷" }], {
+      fetchImpl,
+      retries: 0,
+    });
+    expect(reply).toBe("{\"questions\":[]}");
+    expect(budgets).toEqual([256, 8000]);
+  });
+
+  it("提高额度后仍被截断时提示调整最大输出 tokens", async () => {
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "" }, finish_reason: "length" }],
+          usage: { completion_tokens_details: { reasoning_tokens: 2200 } },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      )) as unknown as typeof fetch;
+
+    await expect(
+      requestChat(proxyConfig, [{ role: "user", content: "出卷" }], { fetchImpl, retries: 0 }),
+    ).rejects.toThrow(/被截断.*推理思考占 2200/);
+  });
 });

@@ -338,11 +338,12 @@ export function SettingsPage() {
                   className="w-full accent-cyan"
                 />
               </Field>
-              <Field label="最大输出 tokens">
+              <Field label="最大输出 tokens" hint="推理模型含思考 token，建议 ≥8000">
                 <input
                   type="number"
                   min={256}
-                  max={8192}
+                  max={16000}
+                  step={500}
                   value={draft.ai.maxTokens}
                   onChange={(event) => setAi({ maxTokens: Number(event.target.value) })}
                   className={inputClass}
