@@ -155,11 +155,13 @@ export function parseGlossary(raw) {
     }
 
     if (currentH2.startsWith("15") && currentH3) {
+      // 去掉「15.5 」这类小节编号，才能与第 3 节的速查表标题合并
+      const contrastTitle = currentH3.replace(/^\d+(\.\d+)?\s*[、.]?\s*/, "");
       const bullet = line.match(/^-\s+\*\*(.+?)\*\*[：:]\s*(.+)$/);
       if (bullet) {
-        let contrast = contrasts.find((item) => item.title === currentH3);
+        let contrast = contrasts.find((item) => item.title === contrastTitle);
         if (!contrast) {
-          contrast = { id: `cx_${contrasts.length}`, title: currentH3, items: [], detail: "" };
+          contrast = { id: `cx_${contrasts.length}`, title: contrastTitle, items: [], detail: "" };
           contrasts.push(contrast);
         }
         contrast.items ??= [];
@@ -167,9 +169,9 @@ export function parseGlossary(raw) {
       }
       const oneLine = line.match(/^一句话判断[：:]\s*(.+)$/);
       if (oneLine) {
-        let contrast = contrasts.find((item) => item.title === currentH3);
+        let contrast = contrasts.find((item) => item.title === contrastTitle);
         if (!contrast) {
-          contrast = { id: `cx_${contrasts.length}`, title: currentH3, items: [], detail: "" };
+          contrast = { id: `cx_${contrasts.length}`, title: contrastTitle, items: [], detail: "" };
           contrasts.push(contrast);
         }
         contrast.detail = stripMarkdown(oneLine[1].trim());
@@ -180,6 +182,31 @@ export function parseGlossary(raw) {
   }
 
   const seen = new Set();
+  const merged = new Map();
+  for (const contrast of contrasts) {
+    const key = contrast.title.toLowerCase().replace(/\s+/g, "");
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, {
+        ...contrast,
+        items: contrast.items ? [...contrast.items] : undefined,
+      });
+      continue;
+    }
+    const items = [...(existing.items ?? [])];
+    for (const item of contrast.items ?? []) {
+      if (!items.some((candidate) => candidate.name === item.name)) items.push(item);
+    }
+    merged.set(key, {
+      ...existing,
+      detail:
+        (contrast.detail?.length ?? 0) > (existing.detail?.length ?? 0)
+          ? contrast.detail
+          : existing.detail,
+      items: items.length ? items : undefined,
+    });
+  }
+
   return {
     terms: terms.filter((item) => {
       const key = item.term.toLowerCase();
@@ -187,7 +214,7 @@ export function parseGlossary(raw) {
       seen.add(key);
       return true;
     }),
-    contrasts,
+    contrasts: [...merged.values()],
   };
 }
 

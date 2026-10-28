@@ -101,6 +101,7 @@ export interface PaperValidation {
 export function validatePaper(questions: ExamQuestion[], expectedTotal = 80): PaperValidation {
   const errors: string[] = [];
   const ids = new Set<string>();
+  const prompts = new Map<string, string>();
   let total = 0;
 
   if (questions.length === 0) errors.push("试卷没有题目");
@@ -119,6 +120,12 @@ export function validatePaper(questions: ExamQuestion[], expectedTotal = 80): Pa
     }
     if (!question.prompt?.trim()) errors.push(`题目 ${question.id} 缺少题干`);
     if (!question.answer?.trim()) errors.push(`题目 ${question.id} 缺少参考答案`);
+    if (question.prompt?.trim()) {
+      const promptKey = normalizeAnswer(question.prompt);
+      const duplicateOf = prompts.get(promptKey);
+      if (duplicateOf) errors.push(`题目内容重复：${question.id} 与 ${duplicateOf}`);
+      else prompts.set(promptKey, question.id);
+    }
 
     if (question.type === "choice") {
       const options = question.options ?? [];

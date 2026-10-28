@@ -33,6 +33,18 @@ describe("真实课程数据上的本地内容生产", () => {
     }
   });
 
+  it("概念型试卷的多道辨析题不会重复", () => {
+    const conceptChapters = course.chapters.filter((chapter) => chapter.profile === "concept");
+    expect(conceptChapters.length).toBeGreaterThan(0);
+    for (const chapter of conceptChapters) {
+      const content = loadChapterContent(chapter.id);
+      const questions = generateLocalPaper(chapter, content, glossary);
+      const contrasts = questions.filter((question) => question.type === "contrast");
+      expect(new Set(contrasts.map((question) => question.prompt)).size).toBe(contrasts.length);
+      expect(new Set(contrasts.map((question) => question.knowledgePointTitle)).size).toBe(contrasts.length);
+    }
+  });
+
   it("导读包含来自原文的目标、概念与考试计划", () => {
     for (const chapter of course.chapters.slice(0, 12)) {
       const guide = buildLocalGuide(chapter);

@@ -92,6 +92,14 @@ describe("试卷 80 分校验", () => {
     expect(result.errors.join()).toContain("正确答案不在选项中");
   });
 
+  it("题干重复时拒绝", () => {
+    const paper = Array.from({ length: 8 }, (_, index) => choiceQuestion(index + 1));
+    paper[1] = { ...paper[1], prompt: paper[0].prompt };
+    const result = validatePaper(paper);
+    expect(result.ok).toBe(false);
+    expect(result.errors.join()).toContain("题目内容重复");
+  });
+
   it("题目 id 重复时拒绝", () => {
     const paper = Array.from({ length: 8 }, (_, index) => choiceQuestion(index + 1));
     paper[1] = { ...paper[1], id: paper[0].id };

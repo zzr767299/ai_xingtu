@@ -249,6 +249,7 @@ export function generateLocalPaper(
   const questions: ExamQuestion[] = [];
   const usedSentences = new Set<string>();
   const usedTerms = new Set<string>();
+  const usedContrasts = new Set<string>();
   const codeBlocks = collectCodeBlocks(content);
   let codeCursor = 0;
 
@@ -262,7 +263,7 @@ export function generateLocalPaper(
           : slot.type === "fill"
             ? makeFill(chapter, glossary, slot.points, usedTerms, nextId)
             : slot.type === "contrast"
-              ? makeContrast(chapter, glossary, slot.points, nextId)
+              ? makeContrast(chapter, glossary, slot.points, nextId, usedContrasts)
               : slot.type === "code-read"
                 ? makeCodeRead(codeBlocks, codeCursor++, slot.points, nextId)
                 : slot.type === "code-fill"
@@ -277,11 +278,13 @@ export function generateLocalPaper(
     }
   }
 
-  // 兜底：若内容不足以支撑某类题目，用综合设计题补齐，保证总分仍为 80
+  // 兜底：若内容不足以支撑某类题目，用综合设计题补齐，保证总分仍为 80。
+  // variant 让每道补充题换一个设计视角，避免出现完全相同的题干。
+  let designVariant = questions.filter((question) => question.type === "design").length;
   while (questions.reduce((sum, question) => sum + question.points, 0) < 80) {
     const missing = 80 - questions.reduce((sum, question) => sum + question.points, 0);
     const points = missing >= 10 ? 10 : missing;
-    questions.push(makeDesign(chapter, content, points, nextId));
+    questions.push(makeDesign(chapter, content, points, nextId, designVariant++));
   }
 
   return questions;
@@ -369,18 +372,39 @@ function makeContrast(
   glossary: Glossary,
   points: number,
   nextId: (type: QuestionType) => string,
+  used: Set<string>,
 ): ExamQuestion {
-  const candidate = glossary.contrasts.find((contrast) =>
-    chapter.terms.some((term) => contrast.title.includes(term)),
-  );
   const half = Math.floor(points / 2);
+  const namesKey = (names: string[]) => names.map((name) => name.trim().toLowerCase()).sort().join("|");
 
-  if (candidate) {
-    const items = candidate.items ?? [];
-    const names = items.length >= 2 ? items.slice(0, 2).map((item) => item.name) : splitContrast(candidate.title);
+  let selected:
+    | { contrast: Glossary["contrasts"][number]; items: { name: string; text: string }[]; names: string[] }
+    | undefined;
+
+  for (const contrast of glossary.contrasts) {
+    if (used.has(contrast.title)) continue;
+    if (!chapter.terms.some((term) => contrast.title.includes(term))) continue;
+    const items = contrast.items ?? [];
+    const names =
+      items.length >= 2 ? items.slice(0, 2).map((item) => item.name) : splitContrast(contrast.title);
+    const key = namesKey(names);
+    // 同一组概念即使标题写法不同（带/不带小节编号），也视为已使用
+    if (used.has(key)) continue;
+    used.add(contrast.title);
+    used.add(key);
+    names.forEach((name) => used.add(name));
+    selected = { contrast, items, names };
+    break;
+  }
+
+  if (selected) {
+    const { contrast, items, names } = selected;
     const criteria = names.map((name, index) => ({
       point: `说明「${name}」的定位与适用场景`,
-      keywords: [name, ...(items[index]?.text ?? "").split(/[，。；、]/).filter((w) => w.length >= 2).slice(0, 2)],
+      keywords: [
+        name,
+        ...(items[index]?.text ?? "").split(/[，。；、]/).filter((word) => word.length >= 2).slice(0, 2),
+      ],
       points: index === 0 ? half : points - half,
     }));
     return {
@@ -388,21 +412,37 @@ function makeContrast(
       type: "contrast",
       points,
       knowledgePointTitle: names.join(" / "),
-      prompt: `辨析「${candidate.title}」：请说明两者的核心区别、各自解决的问题，以及什么时候该用哪一个。${
-        candidate.detail ? `\n\n提示：${candidate.detail}` : ""
+      prompt: `辨析「${contrast.title}」：请说明两者的核心区别、各自解决的问题，以及什么时候该用哪一个。${
+        contrast.detail ? `\n\n提示：${contrast.detail}` : ""
       }`,
       answer: items.length
-        ? items.map((item) => `${item.name}：${item.text}`).join("\n") + (candidate.detail ? `\n${candidate.detail}` : "")
-        : candidate.detail,
+        ? items.map((item) => `${item.name}：${item.text}`).join("\n") +
+          (contrast.detail ? `\n${contrast.detail}` : "")
+        : contrast.detail,
       rubric: { criteria, notes: "按两个概念的定位、区别与选型场景给分。" },
-      explanation: candidate.detail,
+      explanation: contrast.detail,
       difficulty: "medium",
     };
   }
 
-  const [first, second] = chapter.terms.slice(0, 2);
-  const nameA = first ?? "概念 A";
-  const nameB = second ?? "概念 B";
+  // 没有可用的术语表对照时，从本章术语/知识点里组合一对尚未出现过的概念
+  const pool = [
+    ...new Set([...chapter.terms, ...chapter.sections.map((section) => section.title)]),
+  ].filter((item) => item && !used.has(item));
+
+  const pairs: [string, string][] = [];
+  for (let i = 0; i < pool.length; i += 1) {
+    for (let j = i + 1; j < pool.length; j += 1) {
+      pairs.push([pool[i], pool[j]]);
+    }
+  }
+  const pair = pairs.find(([a, b]) => !used.has(namesKey([a, b]))) ?? ["概念 A", "概念 B"];
+  const [nameA, nameB] = pair;
+  used.add(`${nameA} / ${nameB}`);
+  used.add(namesKey([nameA, nameB]));
+  used.add(nameA);
+  used.add(nameB);
+
   return {
     id: nextId("contrast"),
     type: "contrast",
@@ -467,7 +507,7 @@ function makeCodeRead(
   points: number,
   nextId: (type: QuestionType) => string,
 ): ExamQuestion | null {
-  const block = codeBlocks[cursor % Math.max(1, codeBlocks.length)];
+  const block = codeBlocks[cursor];
   if (!block) return null;
   const identifiers = [...new Set((block.code.match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) ?? []))].slice(0, 4);
   const criteria = identifiers.slice(0, 3).map((identifier, index) => ({
@@ -573,15 +613,23 @@ function makeDesign(
   content: ChapterContent,
   points: number,
   nextId: (type: QuestionType) => string,
+  variant = 0,
 ): ExamQuestion {
-  const titles = content.sections.slice(0, 3).map((section) => section.title);
+  const angles = ["业务流程", "数据与状态", "可靠性与风险", "成本与性能", "评估与迭代"];
+  const angle = angles[variant % angles.length];
+  const focusIndex = content.sections.length ? variant % content.sections.length : -1;
+  const focus = focusIndex >= 0 ? content.sections[focusIndex] : undefined;
+  const titles = content.sections
+    .filter((_, index) => index !== focusIndex)
+    .slice(0, 3)
+    .map((section) => section.title);
   const half = Math.floor(points / 2);
   const rest = points - half - Math.floor(points / 4);
   return {
     id: nextId("design"),
     type: "design",
     points,
-    prompt: `综合设计题：基于「${chapter.title}」，设计一个可落地的小型应用或工作流。请说明业务目标、${titles.join(" / ") || "核心模块"} 在架构中的位置、关键流程，以及你会如何验证它有效。`,
+    prompt: `综合设计题：围绕「${focus?.title ?? chapter.title}」，从「${angle}」角度设计一个可落地的应用或工作流。请说明业务目标、${titles.join(" / ") || "核心模块"} 在架构中的位置、关键流程，以及你会如何验证它有效。`,
     answer: `方案应覆盖业务目标、核心模块（${titles.join("、") || "本章知识点"}）、关键流程与验证方式。`,
     rubric: {
       criteria: [
