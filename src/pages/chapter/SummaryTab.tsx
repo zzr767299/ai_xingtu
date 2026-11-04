@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChapterContent, ChapterMeta } from "../../types";
 import { useApp } from "../../state/AppContext";
-import { Badge, Button, Card, cn } from "../../components/ui";
+import { Badge, Button, Card, LinkButton, cn } from "../../components/ui";
 import { CodeBlock } from "../../components/Markdown";
 import { buildLocalSummary, type ChapterSummary, type MindmapNode } from "../../lib/domain/localContent";
 import { AiError } from "../../lib/ai/provider";
@@ -56,6 +56,15 @@ export function SummaryTab({ chapter, content }: { chapter: ChapterMeta; content
     },
     [ai, chapter, content, glossary],
   );
+
+  // 切换章节时组件不会卸载，需把展示内容重置为当前章节的本地总结，否则会残留上一章内容
+  useEffect(() => {
+    setSummary(localSummary);
+    setCached(false);
+    setModel("");
+    setError(null);
+    setStatus(ai.isAvailable() ? "loading" : "local");
+  }, [localSummary]);
 
   useEffect(() => {
     if (!ai.isAvailable()) {
@@ -344,10 +353,16 @@ export function SummaryTab({ chapter, content }: { chapter: ChapterMeta; content
               确认你已复习完本章总结。该操作计入学习分 4 分；之后即可参加正式章节考试。
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={confirm} disabled={confirmed}>
-              {confirmed ? "已确认复习" : "我已复习完"}
-            </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {confirmed ? (
+              <LinkButton to={`/learn/${chapter.id}?tab=exam`} size="sm" variant="gold">
+                开始考试 →
+              </LinkButton>
+            ) : (
+              <Button size="sm" onClick={confirm}>
+                我已复习完
+              </Button>
+            )}
           </div>
         </div>
       </Card>

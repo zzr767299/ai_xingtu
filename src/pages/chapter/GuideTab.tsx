@@ -69,6 +69,15 @@ export function GuideTab({
     [ai, chapter, content, glossary],
   );
 
+  // 切换章节时组件不会卸载，需把展示内容重置为当前章节的本地导读，否则会残留上一章内容
+  useEffect(() => {
+    setGuide(localGuide);
+    setCached(false);
+    setModel("");
+    setError(null);
+    setStatus(ai.isAvailable() ? "loading" : "local");
+  }, [localGuide]);
+
   useEffect(() => {
     if (!ai.isAvailable()) {
       setStatus("local");

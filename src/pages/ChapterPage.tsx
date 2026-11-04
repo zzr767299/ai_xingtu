@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useApp } from "../state/AppContext";
 import { Badge, Button, Card, LinkButton, ProgressBar, cn } from "../components/ui";
@@ -9,6 +9,7 @@ import { GuideTab } from "./chapter/GuideTab";
 import { LearnTab } from "./chapter/LearnTab";
 import { SummaryTab } from "./chapter/SummaryTab";
 import { ExamTab } from "./chapter/ExamTab";
+import { ChatPanel } from "./chapter/ChatPanel";
 
 type TabId = "guide" | "learn" | "summary" | "exam";
 
@@ -45,6 +46,9 @@ export function ChapterPage() {
   const tabParam = params.get("tab");
   const tab: TabId = TABS.some((item) => item.id === tabParam) ? (tabParam as TabId) : "guide";
   const sectionParam = params.get("s") ?? undefined;
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatSectionTitle, setChatSectionTitle] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!chapter) return;
@@ -89,6 +93,9 @@ export function ChapterPage() {
   const previous = course.chapters
     .filter((item) => item.areaId === chapter.areaId && item.order < chapter.order)
     .sort((a, b) => b.order - a.order)[0];
+  const nextChapter = course.chapters
+    .filter((item) => item.order > chapter.order)
+    .sort((a, b) => a.order - b.order)[0];
   const attempts = progress.attempts
     .filter((attempt) => attempt.chapterId === chapter.id)
     .sort((a, b) => b.createdAt - a.createdAt);
@@ -131,6 +138,15 @@ export function ChapterPage() {
     nextParams.set("tab", next);
     if (next !== "learn") nextParams.delete("s");
     setParams(nextParams, { replace: true });
+  };
+
+  // 默认以上次阅读的小节作为提问上下文，点“针对本节提问”时覆盖为对应小节。
+  const openChat = (sectionTitle?: string) => {
+    const lastSectionId = progress.chapterProgress[chapter.id]?.lastSectionId;
+    setChatSectionTitle(
+      sectionTitle ?? content?.sections.find((section) => section.id === lastSectionId)?.title,
+    );
+    setChatOpen(true);
   };
 
   return (
@@ -247,12 +263,31 @@ export function ChapterPage() {
           {content && tab === "guide" && (
             <GuideTab chapter={chapter} content={content} previousChapterTitle={previous?.title} />
           )}
-          {content && tab === "learn" && <LearnTab chapter={chapter} content={content} />}
+          {content && tab === "learn" && <LearnTab chapter={chapter} content={content} onAsk={openChat} />}
           {content && tab === "summary" && <SummaryTab chapter={chapter} content={content} />}
           {content && tab === "exam" && <ExamTab chapter={chapter} content={content} />}
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20 lg:h-fit">
+          <Card className="relative overflow-hidden border-cyan/35 bg-gradient-to-br from-cyan/[0.14] via-panel/85 to-blue/[0.08] p-3.5">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-6 -top-8 h-20 w-20 rounded-full bg-cyan/20 blur-2xl"
+            />
+            <div className="relative flex items-center gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan/40 bg-cyan/15 text-[15px] text-cyan shadow-[0_0_18px_-8px_rgba(55,214,230,0.9)]">
+                ✦
+              </span>
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-ink">AI 讲解助手</div>
+                <div className="text-[10.5px] text-muted">本章有疑问，随时提问</div>
+              </div>
+            </div>
+            <Button className="relative mt-2.5 w-full" onClick={() => openChat()}>
+              ✦ 问 AI 助手
+            </Button>
+          </Card>
+
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-ink">学习任务</h2>
@@ -318,8 +353,18 @@ export function ChapterPage() {
                   </div>
                 )}
                 <div className="text-[11px] text-dim">共 {attempts.length} 次考试记录</div>
+                {status.passed && nextChapter && (
+                  <LinkButton to={`/learn/${nextChapter.id}`} size="sm" className="mt-1 w-full">
+                    开始学习下一章
+                  </LinkButton>
+                )}
                 {study.total >= 20 && (
-                  <Button size="sm" variant="gold" className="mt-1 w-full" onClick={() => switchTab("exam")}>
+                  <Button
+                    size="sm"
+                    variant={status.passed && nextChapter ? "secondary" : "gold"}
+                    className="w-full"
+                    onClick={() => switchTab("exam")}
+                  >
                     {status.passed ? "重新挑战更高星" : "再次挑战"}
                   </Button>
                 )}
@@ -352,6 +397,28 @@ export function ChapterPage() {
 
         </aside>
       </div>
+
+      {/* 小屏：右侧栏在正文之后，用浮动按钮保证随时可提问 */}
+      {content && !chatOpen && (
+        <button
+          type="button"
+          onClick={() => openChat()}
+          className="fixed bottom-20 right-4 z-40 flex items-center gap-1.5 rounded-full border border-cyan/45 bg-panel-solid px-4 py-2.5 text-[12px] font-medium text-cyan shadow-xl md:bottom-6 lg:hidden"
+          aria-label="问 AI 助手"
+        >
+          <span aria-hidden="true">✦</span>
+          问 AI 助手
+        </button>
+      )}
+
+      {chatOpen && content && (
+        <ChatPanel
+          chapter={chapter}
+          content={content}
+          sectionTitle={chatSectionTitle}
+          onClose={() => setChatOpen(false)}
+        />
+      )}
     </div>
   );
 }

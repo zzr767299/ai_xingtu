@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "node scripts/start-dev.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "course:build": "node scripts/build-course.mjs",

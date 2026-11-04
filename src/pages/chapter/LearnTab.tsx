@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ChapterContent, ChapterMeta, ChapterSection } from "../../types";
 import { useApp } from "../../state/AppContext";
-import { Badge, Button, Card, ProgressBar, cn } from "../../components/ui";
+import { Badge, Button, Card, LinkButton, ProgressBar, cn } from "../../components/ui";
 import { Link } from "react-router-dom";
 import { CourseBlocks, MarkdownText } from "../../components/Markdown";
 import { buildStudyCheck, type StudyCheck } from "../../lib/domain/localContent";
 import { AiError } from "../../lib/ai/provider";
-import { ChatPanel } from "./ChatPanel";
 
-export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: ChapterContent }) {
+export function LearnTab({
+  chapter,
+  content,
+  onAsk,
+}: {
+  chapter: ChapterMeta;
+  content: ChapterContent;
+  onAsk: (sectionTitle?: string) => void;
+}) {
   const { glossary, progress, updateChapterProgress, setLastLocation } = useApp();
   const chapterProgress = progress.chapterProgress[chapter.id];
   const readSet = useMemo(() => new Set(chapterProgress?.sectionsRead ?? []), [chapterProgress?.sectionsRead]);
   const [activeSectionId, setActiveSectionId] = useState(content.sections[0]?.id ?? "");
   const [activeSubId, setActiveSubId] = useState("");
-  const [chatOpen, setChatOpen] = useState(false);
   const [notes, setNotes] = useState(chapterProgress?.notes ?? "");
   const [notesSaved, setNotesSaved] = useState(true);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -133,7 +139,6 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
     setNotesSaved(true);
   }, [chapter.id, notes, updateChapterProgress]);
 
-  const activeSection = content.sections.find((section) => section.id === activeSectionId);
   const readCount = chapter.sections.filter((section) => readSet.has(section.id)).length;
 
   const jumpToSection = (sectionId: string) => {
@@ -158,7 +163,6 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
         activeSectionId={activeSectionId}
         activeSubId={activeSubId}
         readCount={readCount}
-        onAsk={() => setChatOpen(true)}
         onJumpSection={jumpToSection}
         onJumpSub={jumpToSub}
         className="hidden xl:sticky xl:top-20 xl:block xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto"
@@ -173,7 +177,7 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
               已学完 {readCount}/{chapter.sections.length} 节。每节读完后标记完成，并作答学习检查。
             </p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setChatOpen(true)}>
+          <Button variant="secondary" size="sm" onClick={() => onAsk()}>
             ✦ 问 AI 助手
           </Button>
         </div>
@@ -245,7 +249,7 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
                 <Button size="sm" variant={read ? "secondary" : "primary"} onClick={() => toggleRead(section.id)}>
                   {read ? "取消已学完" : "标记本节已学完"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setChatOpen(true)}>
+                <Button size="sm" variant="ghost" onClick={() => onAsk(section.title)}>
                   针对本节提问
                 </Button>
                 <a
@@ -302,16 +306,21 @@ export function LearnTab({ chapter, content }: { chapter: ChapterMeta; content: 
           className="mt-3 w-full resize-y rounded-xl border border-line bg-panel2/50 px-3 py-2.5 text-[13px] leading-relaxed text-ink outline-none placeholder:text-dim focus:border-cyan/50"
         />
       </Card>
-      </div>
 
-      {chatOpen && (
-        <ChatPanel
-          chapter={chapter}
-          content={content}
-          sectionTitle={activeSection?.title}
-          onClose={() => setChatOpen(false)}
-        />
+      {chapter.sections.length > 0 && readCount === chapter.sections.length && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 border-gold/30 bg-gold/[0.04] p-4">
+          <div>
+            <div className="text-sm font-semibold text-ink">AI 讲解已完成</div>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-muted">
+              已学完 {readCount}/{chapter.sections.length} 节，接下来阅读本章图文总结并确认复习。
+            </p>
+          </div>
+          <LinkButton to={`/learn/${chapter.id}?tab=summary`} size="sm" variant="gold">
+            开始 AI 总结阅读 →
+          </LinkButton>
+        </Card>
       )}
+      </div>
     </div>
   );
 }
@@ -323,7 +332,6 @@ function SectionNav({
   activeSectionId,
   activeSubId,
   readCount,
-  onAsk,
   onJumpSection,
   onJumpSub,
   className,
@@ -335,7 +343,6 @@ function SectionNav({
   activeSectionId: string;
   activeSubId: string;
   readCount: number;
-  onAsk: () => void;
   onJumpSection: (sectionId: string) => void;
   onJumpSub: (sectionId: string, subId: string) => void;
   className?: string;
@@ -413,9 +420,6 @@ function SectionNav({
           );
         })}
       </ol>
-      <Button variant="secondary" size="sm" className="mt-2.5 w-full" onClick={onAsk}>
-        ✦ 问 AI 助手
-      </Button>
     </aside>
   );
 }

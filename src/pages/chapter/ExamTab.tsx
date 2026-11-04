@@ -61,12 +61,32 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [restoredDraft, setRestoredDraft] = useState(false);
+  const [gradingStartedAt, setGradingStartedAt] = useState(0);
   const restoredRef = useRef(false);
+  const submitSeq = useRef(0);
 
-  const nextChapter = course.chapters.find((item) => item.order === chapter.order + 1);
+  const nextChapter = course.chapters
+    .filter((item) => item.order > chapter.order)
+    .sort((a, b) => a.order - b.order)[0];
 
   useEffect(() => {
     if (phase !== "answering") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [phase]);
+
+  /**
+   * 阶段切换时把滚动位置拉回顶部：提交后卷面从几千像素缩成一屏，
+   * 旧滚动位置会让主区域只剩空白，看起来像卡死。
+   */
+  useEffect(() => {
+    if (phase === "intro") return;
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "grading") return;
+    setGradingStartedAt(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [phase]);
@@ -237,6 +257,7 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
   const submit = useCallback(
     async (forceLocal = false) => {
       if (!paper) return;
+      const seq = ++submitSeq.current;
       setConfirmSubmit(false);
       setPhase("grading");
       setGradeError(null);
@@ -252,7 +273,10 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
         } else {
           try {
             subjectiveGrades = await ai.gradeSubjective(subjective, answers);
+            // 用户已改用本地判分或重新提交，丢弃这次返回的旧结果
+            if (seq !== submitSeq.current) return;
           } catch (caught) {
+            if (seq !== submitSeq.current) return;
             setGradeError(
               caught instanceof AiError
                 ? caught.message
@@ -280,6 +304,7 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
             gradedBy: "auto" as const,
           },
       );
+      if (seq !== submitSeq.current) return;
       await finalize(paper, grades);
     },
     [ai, answers, finalize, paper],
@@ -441,11 +466,27 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
   }
 
   if (phase === "grading") {
+    const gradingSeconds = gradingStartedAt ? Math.max(0, Math.floor((now - gradingStartedAt) / 1000)) : 0;
+    const slow = gradingSeconds >= 30;
     return (
       <Card className="p-8 text-center">
         <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-cyan" />
-        <p className="mt-4 text-sm text-ink">正在阅卷…</p>
-        <p className="mt-1 text-[11px] text-muted">客观题自动判分，主观题按评分细则评分。</p>
+        <p className="mt-4 text-sm text-ink">
+          正在阅卷…{gradingSeconds >= 3 ? `（已用 ${gradingSeconds} 秒）` : ""}
+        </p>
+        <p className="mt-1 text-[11px] leading-relaxed text-muted">
+          客观题自动判分，主观题按评分细则评分。题目较多时 AI 阅卷通常需要 20–60 秒，可以稍等一下，成绩还没有保存不会丢失。
+        </p>
+        {slow && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <p className="text-[11px] leading-relaxed text-dim">
+              AI 阅卷比平时慢，你可以继续等待，或立即改用本地关键词判分（结果会标注为本地估分）。
+            </p>
+            <Button size="sm" variant="secondary" onClick={() => void submit(true)}>
+              改用本地关键词判分
+            </Button>
+          </div>
+        )}
       </Card>
     );
   }
@@ -477,7 +518,7 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
       <ExamResult
         attempt={result}
         chapter={chapter}
-        nextChapterTitle={result.passed ? nextChapter?.title : undefined}
+        nextChapter={result.passed ? nextChapter : undefined}
         onRetake={() => {
           resetExam();
           void startExam(ai.isAvailable() ? "ai" : "local");
@@ -662,12 +703,12 @@ function ExamQuestionCard({
 function ExamResult({
   attempt,
   chapter,
-  nextChapterTitle,
+  nextChapter,
   onRetake,
 }: {
   attempt: ExamAttempt;
   chapter: ChapterMeta;
-  nextChapterTitle?: string;
+  nextChapter?: ChapterMeta;
   onRetake: () => void;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -723,7 +764,7 @@ function ExamResult({
         <div className="mt-4 rounded-xl border border-line/60 bg-panel2/40 p-3 text-[12.5px] leading-relaxed">
           {attempt.passed ? (
             <p className="text-ok">
-              已通关！{nextChapterTitle ? `下一颗星「${nextChapterTitle}」已解锁。` : "你已完成最后一个关卡，可以去错题本冲击更高星级。"}
+              已通关！{nextChapter ? `下一颗星「${nextChapter.title}」已解锁，可以开始学习下一章。` : "你已完成最后一个关卡，可以去错题本冲击更高星级。"}
             </p>
           ) : (
             <p className="text-danger">
@@ -753,7 +794,16 @@ function ExamResult({
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button size="sm" onClick={onRetake}>
+          {attempt.passed && nextChapter && (
+            <LinkButton to={`/learn/${nextChapter.id}`} size="sm">
+              开始学习下一章
+            </LinkButton>
+          )}
+          <Button
+            size="sm"
+            variant={attempt.passed && nextChapter ? "secondary" : "primary"}
+            onClick={onRetake}
+          >
             再考一次
           </Button>
           <LinkButton to={`/learn/${chapter.id}?tab=summary`} variant="secondary" size="sm">
