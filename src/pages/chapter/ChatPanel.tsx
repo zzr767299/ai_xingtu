@@ -32,6 +32,7 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const available = ai.isAvailable();
@@ -50,6 +51,17 @@ export function ChatPanel({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length, sending]);
+
+  // Esc：全屏时先退出全屏，否则关闭面板。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (fullscreen) setFullscreen(false);
+      else onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fullscreen, onClose]);
 
   const send = async (text: string) => {
     const trimmed = text.trim();
@@ -114,7 +126,10 @@ export function ChatPanel({
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-scrim/55 backdrop-blur-[2px]" onClick={onClose}>
       <aside
-        className="flex h-full w-full max-w-[440px] flex-col border-l border-line bg-panel-solid shadow-2xl"
+        className={cn(
+          "flex h-full w-full flex-col border-l border-line bg-panel-solid shadow-2xl",
+          fullscreen ? "max-w-none" : "max-w-[440px]",
+        )}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-label="AI 讲解助手"
@@ -133,6 +148,42 @@ export function ChatPanel({
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setFullscreen((current) => !current)}
+              className="hidden h-7 w-7 items-center justify-center rounded-md border border-line/60 bg-panel2/50 text-muted transition-colors hover:border-cyan/40 hover:text-cyan sm:flex"
+              aria-label={fullscreen ? "退出全屏" : "全屏显示"}
+              aria-pressed={fullscreen}
+              title={fullscreen ? "退出全屏（Esc）" : "全屏显示"}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                {fullscreen ? (
+                  <>
+                    <path d="M4 14h6v6" />
+                    <path d="M20 10h-6V4" />
+                    <path d="M14 10l7-7" />
+                    <path d="M3 21l7-7" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M15 3h6v6" />
+                    <path d="M9 21H3v-6" />
+                    <path d="M21 3l-7 7" />
+                    <path d="M3 21l7-7" />
+                  </>
+                )}
+              </svg>
+            </button>
             <Button size="sm" variant="ghost" onClick={() => void clear()} disabled={messages.length === 0}>
               清空
             </Button>
@@ -156,7 +207,8 @@ export function ChatPanel({
           </div>
         )}
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className={cn("space-y-3", fullscreen && "mx-auto w-full max-w-4xl")}>
           {messages.length === 0 && (
             <div className="rounded-xl border border-line/60 bg-panel2/40 p-3 text-[12px] leading-relaxed text-muted">
               我会基于「{chapter.title}」的原文回答。可以先点下面的快捷提问，或直接输入你的问题。
@@ -200,9 +252,11 @@ export function ChatPanel({
             </div>
           )}
           <div ref={bottomRef} />
+          </div>
         </div>
 
         <div className="border-t border-line/70 p-3">
+          <div className={cn(fullscreen && "mx-auto w-full max-w-4xl")}>
           <div className="mb-2 flex flex-wrap gap-1.5">
             {QUICK_ACTIONS.map((action) => (
               <button
@@ -236,6 +290,7 @@ export function ChatPanel({
             <Button size="sm" onClick={() => void send(input)} disabled={!available || sending || !input.trim()}>
               发送
             </Button>
+          </div>
           </div>
         </div>
       </aside>
