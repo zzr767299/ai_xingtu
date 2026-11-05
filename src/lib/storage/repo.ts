@@ -4,6 +4,7 @@ import type {
   AppSettings,
   ChapterProgress,
   ChatMessage,
+  ChatSession,
   ExamAttempt,
   ExportBundle,
   Paper,
@@ -18,8 +19,17 @@ export const KEYS = {
   courseMeta: "meta:course",
   cache: "cache:ai:",
   chat: "chat:",
+  chatSessions: "chat-sessions:",
   draft: "draft:",
 };
+
+const CHAT_SESSION_LIMIT = 30;
+
+export function sessionTitle(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return "新对话";
+  return normalized.length > 30 ? `${normalized.slice(0, 30)}…` : normalized;
+}
 
 export const PROVIDER_PRESETS: { id: string; label: string; baseUrl: string; model: string; hint: string }[] = [
   {
@@ -146,6 +156,40 @@ export class ProgressRepository {
 
   async saveChat(chapterId: string, messages: ChatMessage[]): Promise<void> {
     await this.store.set(KEYS.chat + chapterId, messages.slice(-60));
+  }
+
+  /**
+   * 按章节读取历史对话，最近创建的排在最前。
+   * 旧版本每个章节只保存一条对话线程，这里会自动迁移为首个会话。
+   */
+  async getChatSessions(chapterId: string): Promise<ChatSession[]> {
+    const stored = await this.store.get<ChatSession[]>(KEYS.chatSessions + chapterId);
+    if (stored?.length) return stored;
+
+    const legacy = await this.getChat(chapterId);
+    if (!legacy.length) return [];
+
+    const firstUser = legacy.find((message) => message.role === "user");
+    const createdAt = legacy[0]?.at ?? Date.now();
+    const session: ChatSession = {
+      id: `chat_legacy_${chapterId}`,
+      chapterId,
+      title: sessionTitle(firstUser?.content ?? "历史对话"),
+      createdAt,
+      updatedAt: legacy[legacy.length - 1]?.at ?? createdAt,
+      messages: legacy,
+    };
+    await this.saveChatSessions(chapterId, [session]);
+    await this.store.delete(KEYS.chat + chapterId);
+    return [session];
+  }
+
+  async saveChatSessions(chapterId: string, sessions: ChatSession[]): Promise<void> {
+    const trimmed = [...sessions]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, CHAT_SESSION_LIMIT)
+      .map((session) => ({ ...session, messages: session.messages.slice(-60) }));
+    await this.store.set(KEYS.chatSessions + chapterId, trimmed);
   }
 
   async saveDraft(draft: { chapterId: string; paper: Paper; answers: Record<string, string>; startedAt: number }) {

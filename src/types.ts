@@ -242,6 +242,16 @@ export interface ChatMessage {
   contextSectionId?: string;
 }
 
+/** 一段按章节保存的 AI 对话，标题取首个提问。 */
+export interface ChatSession {
+  id: string;
+  chapterId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
+}
+
 export interface AiSettings {
   enabled: boolean;
   preset: string;
