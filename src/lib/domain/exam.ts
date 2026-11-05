@@ -97,6 +97,17 @@ export interface PaperValidation {
   errors: string[];
 }
 
+export interface PaperValidationOptions {
+  /** AI 试卷要求代码类题目的参考答案必须带可对照的代码块。 */
+  requireReferenceCode?: boolean;
+}
+
+const REFERENCE_CODE_TYPES: QuestionType[] = ["practice", "design"];
+
+export function hasReferenceCode(answer: string): boolean {
+  return /```[\s\S]*?```/.test(answer ?? "");
+}
+
 // 只靠查文档就能确认的字面量：网址、域名、端口、绝对路径。
 const LITERAL_ANSWER = /(?:(?:https?|wss?):\/\/|\bwww\.|\b[\w-]+\.(?:com|cn|org|io|net|dev|ai)\b|\blocalhost(?::\d+)?\b|^\/[\w./-]{2,})/i;
 // 题干明显在要一个可查的字面量，而不是概念理解。
@@ -118,7 +129,11 @@ function literalTriviaReason(question: ExamQuestion): string | null {
 }
 
 /** 试卷结构校验：总分必须严格等于 80，主观题必须有可执行评分细则，代码题必须有代码。 */
-export function validatePaper(questions: ExamQuestion[], expectedTotal = 80): PaperValidation {
+export function validatePaper(
+  questions: ExamQuestion[],
+  expectedTotal = 80,
+  options: PaperValidationOptions = {},
+): PaperValidation {
   const errors: string[] = [];
   const ids = new Set<string>();
   const prompts = new Map<string, string>();
@@ -140,6 +155,15 @@ export function validatePaper(questions: ExamQuestion[], expectedTotal = 80): Pa
     }
     if (!question.prompt?.trim()) errors.push(`题目 ${question.id} 缺少题干`);
     if (!question.answer?.trim()) errors.push(`题目 ${question.id} 缺少参考答案`);
+    else if (
+      options.requireReferenceCode &&
+      REFERENCE_CODE_TYPES.includes(question.type) &&
+      !hasReferenceCode(question.answer)
+    ) {
+      errors.push(
+        `题目 ${question.id}（${questionTypeLabel(question.type)}）的参考答案缺少代码块：请补充可对照的参考代码与说明`,
+      );
+    }
     if (question.prompt?.trim()) {
       const promptKey = normalizeAnswer(question.prompt);
       const duplicateOf = prompts.get(promptKey);

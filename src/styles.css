@@ -183,12 +183,67 @@ html[data-reduce-motion="true"] *::after {
   padding: 0.12em 0.4em;
   border-radius: 5px;
 }
+.course-prose pre {
+  margin: 1em 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  background: var(--color-code);
+  color: var(--color-code-ink);
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  line-height: 1.65;
+  overflow-x: auto;
+}
 .course-prose pre code {
   background: transparent;
   border: 0;
   padding: 0;
   color: inherit;
   font-size: 0.86em;
+}
+
+/* 紧凑 Markdown：用于参考答案、解析等卡片内的小字号内容 */
+.course-prose.md-compact {
+  font-size: 12.5px;
+  line-height: 1.72;
+  color: inherit;
+}
+.course-prose.md-compact p {
+  margin: 0.5em 0;
+}
+.course-prose.md-compact h3,
+.course-prose.md-compact h4,
+.course-prose.md-compact h5 {
+  font-size: 1em;
+  margin: 0.9em 0 0.35em;
+  border-left: 0;
+  padding-left: 0;
+}
+.course-prose.md-compact ul,
+.course-prose.md-compact ol {
+  margin: 0.5em 0;
+  padding-left: 1.2rem;
+}
+.course-prose.md-compact li {
+  margin: 0.2em 0;
+}
+.course-prose.md-compact pre {
+  margin: 0.7em 0;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.92em;
+}
+.course-prose.md-compact blockquote {
+  margin: 0.7em 0;
+  padding: 0.5rem 0.75rem;
+}
+.course-prose.md-compact table {
+  min-width: 0;
+  margin: 0.7em 0;
+}
+html[data-theme="paper"] .course-prose.md-compact {
+  font-size: 12.5px;
+  line-height: 1.8;
 }
 .course-prose table {
   width: 100%;

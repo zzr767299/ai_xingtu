@@ -74,6 +74,35 @@ describe("试卷 80 分校验", () => {
     expect(result.errors.join()).toContain("必须严格等于 80");
   });
 
+  it("要求实操/设计题的参考答案包含可对照的代码块", () => {
+    const practiceQuestion = (answer: string): ExamQuestion => ({
+      id: "q-practice",
+      type: "practice",
+      points: 10,
+      prompt: "请写一个最小可运行示例，读取一条文本并输出结构化结果。",
+      answer,
+      rubric: { criteria: [{ point: "给出可运行实现", keywords: ["代码", "运行"], points: 10 }] },
+      explanation: "对照原文示例实现。",
+      difficulty: "hard",
+    });
+    const paper = (answer: string) => [
+      ...Array.from({ length: 7 }, (_, index) => choiceQuestion(index + 1)),
+      practiceQuestion(answer),
+    ];
+
+    const missing = validatePaper(paper("应说明代码的整体作用。"), 80, { requireReferenceCode: true });
+    expect(missing.ok).toBe(false);
+    expect(missing.errors.join()).toContain("缺少代码块");
+
+    const withCode = validatePaper(paper("```python\nprint(1)\n```\n先打印，再验证输出。"), 80, {
+      requireReferenceCode: true,
+    });
+    expect(withCode.ok).toBe(true);
+
+    // 本地试卷不强制该项，避免原文没有代码的章节被卡住
+    expect(validatePaper(paper("应说明代码的整体作用。"), 80).ok).toBe(true);
+  });
+
   it("主观题评分细则分值和与题目分值不一致时拒绝", () => {
     const paper = [
       ...Array.from({ length: 7 }, (_, index) => choiceQuestion(index + 1)),

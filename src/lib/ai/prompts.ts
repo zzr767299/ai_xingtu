@@ -1,7 +1,7 @@
 import type { ChapterContent, ChapterMeta, ExamQuestion, Glossary } from "../../types";
 import { questionTypeLabel, type ExamTemplate } from "../domain/exam";
 
-export const PROMPT_VERSION = "v3";
+export const PROMPT_VERSION = "v4";
 
 function truncate(text: string, limit: number): string {
   if (text.length <= limit) return text;
@@ -119,8 +119,14 @@ export function paperPrompt(
    - code-read（代码阅读）：prompt 说明要分析什么；code 原样摘录原文中的完整代码；codeLang 写语言。
    - code-fill（代码补全）：prompt 说明要补哪一行；code 存放原文代码，但必须把要补的那一行替换成「# ____」（Python）或「// ____」（其他语言）的占位行；不要把被挖掉的那一行留在 code 里。
    - 任何代码题都不能出现「阅读下面代码 / 下面是一个消息列表」却看不到代码的情况；原文没有代码时不要出代码题。
-8. 题目要覆盖本章核心知识点，避免多道题重复同一句原文；难度标注 easy/medium/hard。
-9. explanation 说明答案依据，涉及原文时引用知识点标题。
+8. 参考答案 answer 支持 Markdown，涉及实操与设计的题目必须给出可直接对照的参考代码，不能只写文字思路：
+   - code-read：分条给出参考解读（整体作用、关键标识符/参数的作用、可能的运行问题）。代码已在题目里给出，不必整段重复。
+   - code-fill：先给出缺失的那一行（用 \`\`\` 代码块），再说明该行在流程中的作用；不必重复整段代码。
+   - practice（编程实操）：必须给出可运行的最小参考实现（完整代码块，包含输入与预期输出），再分步骤说明如何运行、如何验证结果。
+   - design（系统设计）：先写业务目标、模块划分与关键流程，再给出关键模块的参考代码（接口定义或最小实现骨架，用代码块），最后写验证方式与风险。
+   - 参考答案中出现的代码必须与本章技术栈一致、能对应原文示例；不确定的 API 使用原文出现过的写法，不得编造库名、函数或参数。practice/design 的参考实现控制在 30 行以内，避免整卷超长。
+9. 题目要覆盖本章核心知识点，避免多道题重复同一句原文；难度标注 easy/medium/hard。
+10. explanation 说明答案依据，涉及原文时引用知识点标题。
 返回字段：{"questions":[{"type","points","knowledgePointTitle","prompt","options":[{"key","text"}],"answer","answerAlternatives":[],"rubric":{"criteria":[{"point","keywords":[],"points":number}],"notes":""},"explanation","difficulty","code","codeLang"}]}`,
     user: `章节信息：\n\n${digest}\n\n试卷配置（${template.label}）：\n${slots}\n\n请出一份总分恰好 80 分的试卷 JSON。`,
   };
@@ -132,6 +138,7 @@ export function repairPrompt(errors: string[], previous: string): { system: stri
 请只修复错误，不要改变题目考查意图；分值必须严格等于 80，主观题评分细则分值和必须等于题目分值。
 额外要求：
 - 缺少代码的代码题，必须把代码补进 code 字段（代码补全题用「# ____」占位），题干不要重复贴代码。
+- 代码阅读、代码补全、编程实操、系统设计题的 answer 必须给出可对照的参考内容：代码阅读要分条写清关键标识符与运行风险；代码补全要给出缺失行；编程实操与系统设计必须补上参考代码块，并说明运行/验证方式。
 - 只考 URL、域名、端口、路径、版本号等字面量的题目，必须改写成考查概念、机制或适用场景的题，但保留原分值与题型。`,
     user: `校验错误：\n${errors.map((error) => `- ${error}`).join("\n")}\n\n上一轮输出：\n${truncate(previous, 12000)}\n\n请输出修复后的完整 JSON。`,
   };
@@ -186,7 +193,8 @@ export function similarPrompt(
 1. 不得直接重复原题，也不得只改数字或措辞。
 2. 新题必须能依据章节原文作答，不引入原文没有的内容。
 3. 如果题型适合客观题，请给出明确参考答案；如果是主观题，给出 rubric.criteria，关键词要能区分是否真正理解。
-4. explanation 说明考点与判断依据，引用知识点标题。
+4. 如果原题属于代码阅读、代码补全、编程实操或系统设计，answer 必须包含 Markdown 代码块：给出可对照的参考实现或补全后的关键代码，并说明运行与验证方式，不能只写文字思路。
+5. explanation 说明考点与判断依据，引用知识点标题。
 返回字段：{"prompt":string,"answer":string,"explanation":string,"rubric":{"criteria":[{"point","keywords":[],"points":number}]}}`,
     user: `原错题：\n${JSON.stringify(wrong, null, 2)}\n\n章节资料：\n${truncate(digest, 3200)}\n\n请生成一道同类新题 JSON。`,
   };

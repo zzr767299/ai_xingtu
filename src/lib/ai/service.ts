@@ -184,10 +184,15 @@ export class AiService {
 
     return this.cached(key, Boolean(options.force), async () => {
       const { system, user } = paperPrompt(digest, template);
-      // 整卷 JSON 很长，推理模型尤其容易把额度耗在思考上，这里至少给到 8000
-      const paperTokens = Math.max(this.ai.maxTokens, 8000);
+      // 整卷 JSON 很长，推理模型会先把额度耗在思考上；参考答案还要带参考代码，
+      // 直接给到 16000（requestChat 在 16000 处不再二次重试），并放宽出卷超时。
+      const paperTokens = Math.max(this.ai.maxTokens, 16000);
       const ask = (messages: ChatMessageInput[]) =>
-        requestChat(this.ai, messages, { signal: options.signal, maxTokens: paperTokens });
+        requestChat(this.ai, messages, {
+          signal: options.signal,
+          maxTokens: paperTokens,
+          timeoutMs: Math.max(this.ai.timeoutMs || 60000, 150000),
+        });
 
       let raw = await ask([
         { role: "system", content: system },
@@ -215,7 +220,7 @@ export class AiService {
         }
       }
 
-      let validation = validatePaper(questions, 80);
+      let validation = validatePaper(questions, 80, { requireReferenceCode: true });
 
       // 出卷校验失败时最多修两轮：内容质量问题（字面量题、缺代码）通常一次能改好，
       // 但推理模型偶尔会漏掉一条，留第二轮避免整卷直接失败。
@@ -230,7 +235,7 @@ export class AiService {
         } catch (error) {
           throw new AiValidationError("AI 生成的试卷结构不合法。", [describeParseError(error)]);
         }
-        validation = validatePaper(questions, 80);
+        validation = validatePaper(questions, 80, { requireReferenceCode: true });
       }
 
       if (!validation.ok) {

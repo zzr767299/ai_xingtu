@@ -271,7 +271,7 @@ export function generateLocalPaper(
                   : slot.type === "application"
                     ? makeApplication(chapter, content, slot.points, nextId)
                     : slot.type === "practice"
-                      ? makePractice(chapter, slot.points, nextId)
+                      ? makePractice(chapter, content, slot.points, nextId)
                       : makeDesign(chapter, content, slot.points, nextId);
 
       if (question) questions.push(question);
@@ -524,6 +524,14 @@ function makeCodeRead(
     "指出它可能报错或卡住的位置",
   ];
   const angle = angles[cursor % angles.length];
+  const keyLines = identifiers
+    .map((identifier) => {
+      const line = block.code.split("\n").find((item) => item.includes(identifier));
+      return line
+        ? `- \`${identifier}\`：出现在 \`${line.trim().slice(0, 96)}\``
+        : `- \`${identifier}\`：见代码中同名标识符`;
+    })
+    .join("\n");
 
   return {
     id: nextId("code-read"),
@@ -531,7 +539,24 @@ function makeCodeRead(
     points,
     knowledgePointTitle: block.section.title,
     prompt: `阅读下面这段来自「${block.section.title}」的代码，${angle}，以及在实际运行时可能出现的问题。`,
-    answer: `应说明代码的整体目的，并解释 ${identifiers.join("、")} 等关键标识符的作用。`,
+    answer: [
+      "## 参考解读",
+      "",
+      `- 整体作用：${firstMeaningfulSentence(block.section)}`,
+      `- 关键标识符（需逐项说明作用与数据来源）：`,
+      keyLines,
+      "",
+      "## 参考代码",
+      "",
+      `\`\`\`${block.lang}`,
+      block.code.slice(0, 2000),
+      "```",
+      "",
+      "## 运行注意",
+      "",
+      "- 先确认输入数据的结构与类型，再按代码中的调用顺序执行；",
+      "- 出错时从日志定位第一个失败的调用，而不是逐行猜测。",
+    ].join("\n"),
     code: block.code.slice(0, 2000),
     codeLang: block.lang,
     rubric: {
@@ -583,7 +608,26 @@ function makeCodeFill(
     points,
     knowledgePointTitle: block.section.title,
     prompt: `下面这段来自「${block.section.title}」的代码缺少了一行，请补全缺失的代码。只写缺失的那一行。`,
-    answer: target.trim(),
+    answer: [
+      "## 缺失的代码",
+      "",
+      `\`\`\`${block.lang}`,
+      target.trim(),
+      "```",
+      "",
+      "## 补全后的完整代码",
+      "",
+      `\`\`\`${block.lang}`,
+      block.code.slice(0, 2000),
+      "```",
+      "",
+      "## 说明",
+      "",
+      `- 这一行位于「${block.section.title}」的核心流程中，缺失会导致后续调用拿不到正确的值或直接报错。`,
+      tokens.length ? `- 关键标识符：${tokens.map((token) => `\`${token}\``).join("、")}。` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     // 展示挖空后的代码：不能把原始代码放进 code，否则答案会直接暴露
     code: blankedCode,
     codeLang: block.lang,
@@ -599,6 +643,7 @@ function makeCodeFill(
 
 function makePractice(
   chapter: ChapterMeta,
+  content: ChapterContent,
   points: number,
   nextId: (type: QuestionType) => string,
 ): ExamQuestion {
@@ -610,15 +655,41 @@ function makePractice(
     keywords: [keyword],
     points: index === array.length - 1 ? points - base * (array.length - 1) : base,
   }));
+  const block = [...collectCodeBlocks(content)].sort((a, b) => b.code.length - a.code.length)[0];
+  const snippet = block
+    ? block.code.length > 1600
+      ? `${block.code.slice(0, 1600)}\n…（代码较长，此处节选，完整示例见原文）`
+      : block.code
+    : "";
+  const answerLines = [
+    block ? `## 参考实现（摘自原文「${block.section.title}」）` : "## 参考实现",
+    "",
+    ...(block ? [`\`\`\`${block.lang}`, snippet, "```"] : []),
+    "",
+    "## 实现与验证步骤",
+    "",
+    `1. 准备环境：按「${block?.section.title ?? chapter.sections[0]?.title ?? chapter.title}」原文说明安装依赖、配置好模型与密钥。`,
+    "2. 先跑通上面的最小实现，确认输入、输出结构与原文描述一致。",
+    `3. 在实现中体现 ${keywords.join("、") || "本章核心机制"}，并记录实际运行输出。`,
+    "4. 改动一处输入或参数再运行一次，说明行为变化，证明你真正跑通了实现。",
+    "",
+    "## 验收标准",
+    "",
+    "- 代码可独立运行，输出符合题目要求；",
+    "- 能解释关键行的作用，并能说明一次失败的原因。",
+  ];
 
   return {
     id: nextId("practice"),
     type: "practice",
     points,
     prompt: `本章实操任务：${goal}\n\n请提交你的实现步骤、关键代码片段或运行输出（至少说明你实际做了什么、看到了什么结果）。`,
-    answer: `需要围绕「${goal}」给出可复现的步骤、代码或运行输出，并体现 ${keywords.join("、")}。`,
+    answer: answerLines.join("\n"),
     rubric: { criteria, notes: "本地无法真实执行你的代码，分数为关键词估分。" },
-    explanation: "请以原文案例源码为对照复盘。",
+    explanation: block
+      ? `参考实现取自原文「${block.section.title}」的示例代码，可按步骤对照修改。`
+      : "请以原文案例源码为对照复盘。",
+    sourceRef: block ? { sectionId: block.section.id, sectionTitle: block.section.title } : undefined,
     difficulty: "hard",
   };
 }
@@ -640,12 +711,40 @@ function makeDesign(
     .map((section) => section.title);
   const half = Math.floor(points / 2);
   const rest = points - half - Math.floor(points / 4);
+  const codeBlocks = collectCodeBlocks(content);
+  const block =
+    codeBlocks.find((item) => item.section.id === focus?.id) ??
+    [...codeBlocks].sort((a, b) => b.code.length - a.code.length)[0];
+  const snippet = block
+    ? block.code.length > 1600
+      ? `${block.code.slice(0, 1600)}\n…（代码较长，此处节选，完整示例见原文）`
+      : block.code
+    : "";
+  const goal = focus ? firstMeaningfulSentence(focus) : `围绕「${chapter.title}」完成可落地的方案设计`;
+  const answerLines = [
+    "## 参考方案",
+    "",
+    `1. **业务目标**：${goal}`,
+    `2. **模块划分**：${titles.join("、") || "本章知识点"}；每个模块只负责一件事，边界用输入输出定义。`,
+    `3. **关键流程**：用户输入 → ${focus?.title ?? "核心知识点"} 处理 → 结构化输出 → 校验/降级 → 落库或返回调用方。`,
+    "4. **失败处理**：解析失败时先重试并记录原始输出，仍失败则降级到规则兜底，并把失败样本留给人工复核。",
+    "",
+    block
+      ? `## 参考实现（核心环节，摘自原文「${block.section.title}」）\n\n\`\`\`${block.lang}\n${snippet}\n\`\`\`\n\n说明：把这段代码放进上面流程的对应模块，输入输出按接口约定补齐。`
+      : "## 参考实现\n\n本章原文没有可直接复用的完整代码示例，建议按上述模块拆分后先写接口与数据结构，再逐个补齐实现。",
+    "",
+    "## 验证方式",
+    "",
+    "- 用一条最小样例跑通端到端流程，确认输出字段完整；",
+    "- 构造一条异常输入，确认降级/重试路径有效；",
+    "- 记录耗时、失败率等指标，说明如何判断方案有效。",
+  ];
   return {
     id: nextId("design"),
     type: "design",
     points,
     prompt: `综合设计题：围绕「${focus?.title ?? chapter.title}」，从「${angle}」角度设计一个可落地的应用或工作流。请说明业务目标、${titles.join(" / ") || "核心模块"} 在架构中的位置、关键流程，以及你会如何验证它有效。`,
-    answer: `方案应覆盖业务目标、核心模块（${titles.join("、") || "本章知识点"}）、关键流程与验证方式。`,
+    answer: answerLines.join("\n"),
     rubric: {
       criteria: [
         { point: "说明业务目标与场景", keywords: ["目标", "场景", "业务"], points: half },

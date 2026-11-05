@@ -49,6 +49,23 @@ describe("真实课程数据上的本地内容生产", () => {
     }
   });
 
+  it("代码题与有代码章节的实操/设计题，参考答案都带参考代码", () => {
+    for (const chapter of course.chapters) {
+      const content = loadChapterContent(chapter.id);
+      const hasCode = content.sections.some((section) =>
+        section.blocks.some((block) => block.k === "code"),
+      );
+      const questions = generateLocalPaper(chapter, content, glossary);
+      for (const question of questions) {
+        const requiresCode = question.type === "code-read" || question.type === "code-fill";
+        const prefersCode =
+          (question.type === "practice" || question.type === "design") && hasCode;
+        if (!requiresCode && !prefersCode) continue;
+        expect(question.answer, `${chapter.title} / ${question.id}`).toContain("```");
+      }
+    }
+  });
+
   it("概念型试卷的多道辨析题不会重复", () => {
     const conceptChapters = course.chapters.filter((chapter) => chapter.profile === "concept");
     expect(conceptChapters.length).toBeGreaterThan(0);

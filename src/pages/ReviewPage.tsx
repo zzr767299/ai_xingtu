@@ -309,13 +309,19 @@ function WrongCard({
           )}
 
           <div className="mt-3 grid gap-2 text-[12px] leading-relaxed sm:grid-cols-2">
-            <div className="rounded-lg border border-danger/25 bg-danger/[0.06] p-2.5">
+            <div className="min-w-0 rounded-lg border border-danger/25 bg-danger/[0.06] p-2.5">
               <div className="text-[10px] uppercase tracking-wider text-danger/80">你的答案</div>
               <div className="mt-1 whitespace-pre-wrap text-prose">{entry.userAnswer || "（未作答）"}</div>
             </div>
-            <div className="rounded-lg border border-ok/25 bg-ok/[0.05] p-2.5">
+            <div className="min-w-0 rounded-lg border border-ok/25 bg-ok/[0.05] p-2.5">
               <div className="text-[10px] uppercase tracking-wider text-ok/80">参考答案</div>
-              <div className="mt-1 whitespace-pre-wrap text-prose">{entry.question.answer}</div>
+              <MarkdownText text={entry.question.answer} className="md-compact mt-1" />
+              {["code-read", "code-fill", "practice", "design"].includes(entry.question.type) &&
+                !entry.question.answer.includes("```") && (
+                  <p className="mt-1.5 text-[10px] leading-relaxed text-dim">
+                    该题生成于旧版题库，参考答案未包含代码；重新参加本章考试可获得带参考实现的版本。
+                  </p>
+                )}
             </div>
           </div>
 
@@ -439,7 +445,7 @@ function WrongCard({
               {!similar.check && similar.answer && (
                 <details className="mt-2 rounded-lg border border-line/60 bg-panel2/40 p-2 text-[11.5px] text-muted">
                   <summary className="cursor-pointer text-[11px] text-cyan">查看参考答案</summary>
-                  <div className="mt-1.5">{similar.answer}</div>
+                  <MarkdownText text={similar.answer} className="md-compact mt-1.5" />
                   {similar.explanation && <div className="mt-1 text-[11px] text-dim">{similar.explanation}</div>}
                 </details>
               )}

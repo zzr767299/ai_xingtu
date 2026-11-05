@@ -64,6 +64,7 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
   const [gradingStartedAt, setGradingStartedAt] = useState(0);
   const restoredRef = useRef(false);
   const submitSeq = useRef(0);
+  const generateAbortRef = useRef<AbortController | null>(null);
 
   const nextChapter = course.chapters
     .filter((item) => item.order > chapter.order)
@@ -90,6 +91,11 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [phase]);
+
+  // 离开章节或卸载时取消仍在进行的出卷请求，避免结果写到别的章节页面上。
+  useEffect(() => {
+    return () => generateAbortRef.current?.abort();
+  }, [chapter.id]);
 
   useEffect(() => {
     if (restoredRef.current) return;
@@ -137,8 +143,13 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
       const sequence = attempts.length + 1;
 
       if (mode === "ai") {
+        generateAbortRef.current?.abort();
+        const controller = new AbortController();
+        generateAbortRef.current = controller;
         try {
-          const result = await ai.paper(chapter, content, glossary, template, sequence);
+          const result = await ai.paper(chapter, content, glossary, template, sequence, {
+            signal: controller.signal,
+          });
           const validation = validatePaper(result.data.questions, 80);
           if (!validation.ok) {
             throw new AiError(
@@ -161,6 +172,11 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
           setStartedAt(Date.now());
           setPhase("answering");
         } catch (caught) {
+          // 用户主动取消：回到说明页，不当作失败
+          if (caught instanceof AiError && caught.code === "aborted") {
+            setPhase("intro");
+            return;
+          }
           setGenerateError(
             caught instanceof AiError
               ? caught.message
@@ -429,13 +445,7 @@ export function ExamTab({ chapter, content }: { chapter: ChapterMeta; content: C
   }
 
   if (phase === "generating") {
-    return (
-      <Card className="p-8 text-center">
-        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-cyan" />
-        <p className="mt-4 text-sm text-ink">正在生成 80 分试卷…</p>
-        <p className="mt-1 text-[11px] text-muted">AI 需要依据章节原文命题并校验分值，请稍候。</p>
-      </Card>
-    );
+    return <GeneratingCard onCancel={() => generateAbortRef.current?.abort()} />;
   }
 
   if (phase === "generate-error") {
@@ -867,8 +877,8 @@ function ExamResult({
                       <span className="whitespace-pre-wrap text-ink">{attempt.answers[question.id] || "（未作答）"}</span>
                     </div>
                     <div className="mt-1.5">
-                      <span className="text-dim">参考答案：</span>
-                      <span className="whitespace-pre-wrap text-prose">{question.answer}</span>
+                      <div className="text-dim">参考答案：</div>
+                      <MarkdownText text={question.answer} className="md-compact mt-1" />
                     </div>
                     <div className="mt-1.5">
                       <span className="text-dim">评分反馈：</span>
@@ -900,7 +910,9 @@ function ExamResult({
                         ))}
                       </div>
                     )}
-                    <div className="mt-1.5 text-[11px] text-dim">{question.explanation}</div>
+                    <div className="mt-1.5 text-[11px] text-dim">
+                      <MarkdownText text={question.explanation} className="md-compact" />
+                    </div>
                   </div>
                 )}
               </div>
@@ -909,6 +921,32 @@ function ExamResult({
         </div>
       </Card>
     </div>
+  );
+}
+
+function GeneratingCard({ onCancel }: { onCancel: () => void }) {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <Card className="p-8 text-center">
+      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-line border-t-cyan" />
+      <p className="mt-4 text-sm text-ink">
+        正在生成 80 分试卷…{seconds >= 3 ? `（已用 ${seconds} 秒）` : ""}
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-muted">
+        推理模型会先思考再命题，通常需要 30–120 秒；实操与设计题的参考代码也会一并生成，请勿关闭页面。
+      </p>
+      {seconds >= 15 && (
+        <Button size="sm" variant="ghost" className="mt-3" onClick={onCancel}>
+          取消出卷
+        </Button>
+      )}
+    </Card>
   );
 }
 
